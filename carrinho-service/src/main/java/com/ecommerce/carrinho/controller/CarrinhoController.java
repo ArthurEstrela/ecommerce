@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/carrinho")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class CarrinhoController {
     private final CarrinhoService carrinhoService;
