@@ -1,19 +1,19 @@
-import React from 'react';
+﻿import React from 'react';
 import ProductList from './components/ProductList';
 import Cart from './components/Cart';
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-blue-600 text-white p-6 shadow-md">
-        <h1 className="text-3xl font-bold text-center">E-commerce Distribuído</h1>
+    <div style={{minHeight:'100vh', background:'#f8fafc'}}>
+      <header style={{background:'#2563eb', color:'white', padding:'1.5rem', boxShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
+        <h1 style={{textAlign:'center', fontSize:'2rem', fontWeight:'bold', margin:0}}>E-commerce Distribuido</h1>
       </header>
-      <main className="container mx-auto mt-8">
+      <main style={{maxWidth:'1200px', margin:'2rem auto', padding:'0 1rem'}}>
         <ProductList />
         <Cart />
       </main>
-      <footer className="bg-gray-800 text-white p-4 mt-20 text-center">
-        <p>&copy; 2026 E-commerce Microservices Demo</p>
+      <footer style={{background:'#1e293b', color:'white', padding:'1rem', marginTop:'4rem', textAlign:'center'}}>
+        <p>2026 E-commerce Microservices Demo</p>
       </footer>
     </div>
   );
