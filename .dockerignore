@@ -1,0 +1,15 @@
+.git
+.idea
+.codex
+.agents
+
+**/target
+**/.mvn
+**/mvnw
+**/mvnw.cmd
+
+frontend/node_modules
+frontend/build
+frontend/dist
+
+*.log
