@@ -8,41 +8,129 @@ interface Produto {
   preco: number;
 }
 
-const ProductList: React.FC = () => {
+interface ProductListProps {
+  onAddToCart: () => void;
+}
+
+// Map product ID to an emoji for better visual
+const getProductEmoji = (id: number) => {
+  const emojis = ['📱', '💻', '🎧', '⌚', '🎮', '📷', '🖥️', '⌨️', '🖱️'];
+  return emojis[(id - 1) % emojis.length] || '📦';
+};
+
+const ProductList: React.FC<ProductListProps> = ({ onAddToCart }) => {
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addingId, setAddingId] = useState<number | null>(null);
   const usuarioId = 1; // Simulação de usuário logado
 
   useEffect(() => {
-    getProdutos().then(res => setProdutos(res.data));
+    getProdutos()
+      .then(res => {
+        setProdutos(res.data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Erro ao buscar produtos", err);
+        setLoading(false);
+      });
   }, []);
 
+  const showToast = (message: string, type: 'success' | 'info' | 'error') => {
+    const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type === 'error' ? 'info' : type}`;
+    
+    const icon = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ');
+    
+    toast.innerHTML = `
+      <div class="toast-icon">${icon}</div>
+      <div>${message}</div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 3000);
+  };
+
   const handleAddToCart = (produto: Produto) => {
+    setAddingId(produto.id);
     adicionarAoCarrinho(usuarioId, {
       produtoId: produto.id,
       quantidade: 1,
       precoUnitario: produto.preco
-    }).then(() => alert(`${produto.nome} adicionado ao carrinho!`));
+    }).then(() => {
+      onAddToCart();
+      showToast(`${produto.nome} adicionado ao carrinho!`, 'success');
+    }).catch(err => {
+      showToast(`Erro ao adicionar ${produto.nome}`, 'error');
+    }).finally(() => {
+      setAddingId(null);
+    });
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Catálogo de Produtos</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {produtos.map(p => (
-          <div key={p.id} className="border p-4 rounded shadow-sm hover:shadow-md transition">
-            <h3 className="font-semibold text-lg">{p.nome}</h3>
-            <p className="text-gray-600">{p.descricao}</p>
-            <p className="text-blue-600 font-bold mt-2">R$ {p.preco.toFixed(2)}</p>
-            <button 
-              onClick={() => handleAddToCart(p)}
-              className="mt-4 w-full bg-green-500 text-white py-2 rounded hover:bg-green-600 transition"
-            >
-              Adicionar ao Carrinho
-            </button>
-          </div>
-        ))}
+    <section>
+      <div className="section-header">
+        <h2 className="section-title">Nossos <span>Produtos</span></h2>
+        <p className="section-description">Catálogo distribuído com alta disponibilidade.</p>
       </div>
-    </div>
+
+      {loading ? (
+        <div className="product-grid">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="product-card">
+              <div className="skeleton" style={{ width: '60px', height: '60px', marginBottom: '1rem', borderRadius: '12px' }}></div>
+              <div className="skeleton" style={{ width: '80%', height: '24px', marginBottom: '0.5rem' }}></div>
+              <div className="skeleton" style={{ width: '100%', height: '16px', marginBottom: '1rem' }}></div>
+              <div className="skeleton" style={{ width: '50%', height: '32px', marginTop: 'auto' }}></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="product-grid">
+          {produtos.map(p => (
+            <div key={p.id} className="product-card">
+              <span className="product-emoji">{getProductEmoji(p.id)}</span>
+              <h3 className="product-name">{p.nome}</h3>
+              <p className="product-description">{p.descricao}</p>
+              
+              <div className="product-footer">
+                <div>
+                  <div className="product-price-label">Preço Unitário</div>
+                  <div className="product-price">R$ {p.preco.toFixed(2)}</div>
+                </div>
+                <div className="product-stock">
+                  <div className="stock-indicator"></div>
+                  Em estoque
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => handleAddToCart(p)}
+                disabled={addingId === p.id}
+                className="btn btn-add-cart"
+              >
+                {addingId === p.id ? (
+                  <span className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px', margin: '0 auto' }}></span>
+                ) : (
+                  <>
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                    Adicionar
+                  </>
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 };
 

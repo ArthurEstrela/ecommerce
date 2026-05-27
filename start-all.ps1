@@ -64,12 +64,12 @@ if ($StopAll) {
 
     if (Test-Path $PIDS_F) {
         $savedPids = Get-Content $PIDS_F
-        foreach ($pid in $savedPids) {
-            if ($pid -match '^\d+$') {
-                $p = Get-Process -Id ([int]$pid) -ErrorAction SilentlyContinue
+        foreach ($procId in $savedPids) {
+            if ($procId -match '^\d+$') {
+                $p = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
                 if ($p) {
-                    Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue
-                    Write-OK "PID $pid ($($p.ProcessName)) finalizado"
+                    Stop-Process -Id ([int]$procId) -Force -ErrorAction SilentlyContinue
+                    Write-OK "PID $procId ($($p.ProcessName)) finalizado"
                 }
             }
         }
