@@ -2,6 +2,173 @@
 
 Este projeto implementa um sistema de E-commerce robusto baseado em microsserviços, demonstrando conceitos fundamentais de sistemas distribuídos como Service Discovery, RPC (gRPC), Mensageria Assíncrona (RabbitMQ) e Persistência Poliglota/Isolada.
 
+## Como Rodar com Docker Compose
+
+### Pré-requisitos
+
+- Docker
+- Docker Compose
+
+### Subir o projeto
+
+Na raiz do projeto, execute:
+
+```bash
+docker compose up -d --build
+```
+
+Esse comando sobe a infraestrutura e os microsserviços:
+
+- PostgreSQL
+- pgAdmin
+- RabbitMQ
+- Eureka Server
+- Produto Service
+- Carrinho Service
+- Pedido Service
+- Pagamento Service
+- Estoque Service
+- Notificação Service
+
+### Verificar containers
+
+```bash
+docker compose ps
+```
+
+### Ver logs
+
+```bash
+docker compose logs -f
+```
+
+Para ver logs de um serviço específico:
+
+```bash
+docker compose logs -f produto-service
+```
+
+### Parar o projeto
+
+```bash
+docker compose down
+```
+
+### Acessos da infraestrutura
+
+| Serviço | URL | Credenciais |
+| --- | --- | --- |
+| Eureka Dashboard | http://localhost:8761 | - |
+| RabbitMQ Management | http://localhost:15672 | `guest` / `guest` |
+| pgAdmin | http://localhost:5050 | `admin@admin.com` / `admin` |
+| PostgreSQL | `localhost:5432` | `root` / `rootpassword` |
+
+## Endpoints Atuais
+
+### Produto Service
+
+Base URL:
+
+```text
+http://localhost:8081
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| GET | `/api/produtos` | Lista produtos |
+| GET | `/api/produtos/{id}` | Busca produto por ID |
+| POST | `/api/produtos` | Cria produto |
+| DELETE | `/api/produtos/{id}` | Remove produto |
+
+Exemplo de criacao de produto:
+
+```http
+POST http://localhost:8081/api/produtos
+Content-Type: application/json
+```
+
+```json
+{
+  "nome": "Notebook",
+  "descricao": "Notebook Dell",
+  "preco": 3500.0,
+  "estoque": 10
+}
+```
+
+### Carrinho Service
+
+Base URL:
+
+```text
+http://localhost:8083
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| GET | `/api/carrinho/{usuarioId}` | Busca ou cria carrinho do usuario |
+| POST | `/api/carrinho/{usuarioId}/adicionar` | Adiciona item ao carrinho |
+| POST | `/api/carrinho/{usuarioId}/checkout` | Finaliza carrinho e cria pedido via gRPC |
+
+Exemplo de item no carrinho:
+
+```http
+POST http://localhost:8083/api/carrinho/1/adicionar
+Content-Type: application/json
+```
+
+```json
+{
+  "produtoId": 1,
+  "quantidade": 1,
+  "precoUnitario": 3500.0
+}
+```
+
+### Pagamento Service
+
+Base URL:
+
+```text
+http://localhost:8084
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| POST | `/api/pagamento/processar?pedidoId={pedidoId}&valor={valor}` | Processa pagamento manualmente e publica evento no RabbitMQ |
+
+Exemplo:
+
+```http
+POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=3500.0
+```
+
+### Serviços Sem Endpoint REST Publico
+
+| Serviço | Porta | Como funciona |
+| --- | --- | --- |
+| Pedido Service | `8082` / `9090` | Recebe chamadas gRPC do Carrinho Service na porta `9090` |
+| Estoque Service | `8085` | Consome eventos RabbitMQ de pagamento aprovado |
+| Notificação Service | `8086` | Consome eventos RabbitMQ e simula envio de notificacao |
+
+### Fluxo de Teste Sugerido
+
+1. Criar produto em `POST http://localhost:8081/api/produtos`.
+2. Listar produtos em `GET http://localhost:8081/api/produtos`.
+3. Adicionar produto ao carrinho em `POST http://localhost:8083/api/carrinho/1/adicionar`.
+4. Consultar carrinho em `GET http://localhost:8083/api/carrinho/1`.
+5. Finalizar carrinho em `POST http://localhost:8083/api/carrinho/1/checkout`.
+6. Processar pagamento em `POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=3500.0`.
+7. Verificar logs do Estoque e Notificação:
+
+```bash
+docker compose logs -f estoque-service notificacao-service
+```
+
+> Observacao: atualmente o pagamento ainda e disparado manualmente pelo endpoint REST do Pagamento Service. O fluxo automatico `Pedido -> fila RabbitMQ -> Pagamento` ainda nao esta implementado.
+
+---
+
 ## 1. Arquitetura do Sistema
 
 O sistema é composto por 7 componentes principais:
@@ -32,22 +199,6 @@ Utilizamos gRPC entre o **Carrinho** e o **Pedido**. Esta escolha garante alta p
 Implementamos o padrão **Pub/Sub** para a confirmação de pagamentos.
 - O **Pagamento Service** publica uma mensagem na `pagamento.exchange`.
 - O **Estoque Service** e o **Notificação Service** possuem filas próprias vinculadas a esta exchange, reagindo de forma independente e paralela. Isso garante o **desacoplamento** e a **escalabilidade**.
-
-## 4. Como Executar
-
-### Pré-requisitos
-- Docker e Docker Compose
-- Java 21+
-- Maven
-
-### Passos
-1.  **Infraestrutura:** Na raiz do projeto, execute `docker-compose up -d`. Isso subirá o PostgreSQL e o RabbitMQ.
-2.  **Eureka Server:** Entre na pasta `eureka-server` e execute `mvn spring-boot:run`.
-3.  **Contratos gRPC:** Na pasta `grpc-contracts`, execute `mvn install` para gerar as classes necessárias.
-4.  **Serviços Backend:** Inicie cada microsserviço (Produto, Carrinho, Pedido, Pagamento, Estoque, Notificacao) usando `mvn spring-boot:run`.
-5.  **Frontend:** Na pasta `frontend`, execute `npm install` e `npm start`.
-
----
 
 ## 5. Mapeamento Teórico
 
