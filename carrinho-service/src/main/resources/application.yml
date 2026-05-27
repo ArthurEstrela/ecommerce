@@ -5,9 +5,9 @@ spring:
   application:
     name: carrinho-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=carrinho_db
-    username: root
-    password: rootpassword
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=carrinho_db}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:rootpassword}
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,11 +15,12 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: ${DB_SCHEMA:carrinho_db}
 
 grpc:
   client:
     pedido-service:
-      address: 'discovery:///pedido-service'
+      address: ${GRPC_CLIENT_PEDIDO_SERVICE_ADDRESS:discovery:///pedido-service}
       enableKeepAlive: true
       keepAliveWithoutCalls: true
       negotiationType: plaintext
@@ -27,4 +28,4 @@ grpc:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}

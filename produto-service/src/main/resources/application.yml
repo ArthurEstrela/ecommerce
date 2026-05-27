@@ -5,9 +5,9 @@ spring:
   application:
     name: produto-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=produto_db
-    username: root
-    password: rootpassword
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=produto_db}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:rootpassword}
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,8 +15,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: ${DB_SCHEMA:produto_db}
 
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
