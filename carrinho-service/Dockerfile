@@ -7,7 +7,6 @@ COPY grpc-contracts/src ./grpc-contracts/src
 RUN mvn -q -f grpc-contracts/pom.xml -DskipTests install
 
 COPY carrinho-service/pom.xml ./carrinho-service/pom.xml
-RUN mvn -q -f carrinho-service/pom.xml -DskipTests dependency:go-offline
 
 COPY carrinho-service/src ./carrinho-service/src
 RUN mvn -q -f carrinho-service/pom.xml -DskipTests package
