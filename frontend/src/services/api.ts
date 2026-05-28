@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const apiProduto = axios.create({ baseURL: 'http://localhost:8081/api' });
+const apiProduto = axios.create({ baseURL: 'http://localhost:8087/api' });
 const apiCarrinho = axios.create({ baseURL: 'http://localhost:8083/api' });
 
 export const getProdutos = () => apiProduto.get('/produtos');

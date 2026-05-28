@@ -1,0 +1,30 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+
+# Logs do script de startup
+logs/
+*.log
+*.err.log
+
+# PID tracking do start-all.ps1
+.running-pids
+
+# Node
+frontend/node_modules/
+frontend/build/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Arquivos de crash da JVM
+hs_err_pid*.log
+replay_pid*.log
