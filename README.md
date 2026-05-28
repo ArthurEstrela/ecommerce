@@ -2,39 +2,174 @@
 
 > Sistema de compras online com fluxo completo de pedido, desenvolvido como projeto prático da disciplina de **Sistemas Distribuídos**, aplicando conceitos de RPC, Mensageria, Pub/Sub e Service Discovery.
 
+## Como Rodar com Docker Compose
+
+### Pré-requisitos
+
+- Docker
+- Docker Compose
+
+### Subir o projeto
+
+Na raiz do projeto, execute:
+
+```bash
+docker compose up -d --build
+```
+
+Esse comando sobe a infraestrutura e os microsserviços:
+
+- PostgreSQL
+- pgAdmin
+- RabbitMQ
+- Eureka Server
+- Produto Service
+- Carrinho Service
+- Pedido Service
+- Pagamento Service
+- Estoque Service
+- Notificação Service
+
+### Verificar containers
+
+```bash
+docker compose ps
+```
+
+### Ver logs
+
+```bash
+docker compose logs -f
+```
+
+Para ver logs de um serviço específico:
+
+```bash
+docker compose logs -f produto-service
+```
+
+### Parar o projeto
+
+```bash
+docker compose down
+```
+
+### Acessos da infraestrutura
+
+| Serviço | URL | Credenciais |
+| --- | --- | --- |
+| Eureka Dashboard | http://localhost:8761 | - |
+| RabbitMQ Management | http://localhost:15672 | `guest` / `guest` |
+| pgAdmin | http://localhost:5050 | `admin@admin.com` / `admin` |
+| PostgreSQL | `localhost:5432` | `root` / `rootpassword` |
+
+## Endpoints Atuais
+
+### Produto Service
+
+Base URL:
+
+```text
+http://localhost:8081
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| GET | `/api/produtos` | Lista produtos |
+| GET | `/api/produtos/{id}` | Busca produto por ID |
+| POST | `/api/produtos` | Cria produto |
+| DELETE | `/api/produtos/{id}` | Remove produto |
+
+Exemplo de criacao de produto:
+
+```http
+POST http://localhost:8081/api/produtos
+Content-Type: application/json
+```
+
+```json
+{
+  "nome": "Notebook",
+  "descricao": "Notebook Dell",
+  "preco": 3500.0,
+  "estoque": 10
+}
+```
+
+### Carrinho Service
+
+Base URL:
+
+```text
+http://localhost:8083
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| GET | `/api/carrinho/{usuarioId}` | Busca ou cria carrinho do usuario |
+| POST | `/api/carrinho/{usuarioId}/adicionar` | Adiciona item ao carrinho |
+| POST | `/api/carrinho/{usuarioId}/checkout` | Finaliza carrinho e cria pedido via gRPC |
+
+Exemplo de item no carrinho:
+
+```http
+POST http://localhost:8083/api/carrinho/1/adicionar
+Content-Type: application/json
+```
+
+```json
+{
+  "produtoId": 1,
+  "quantidade": 1,
+  "precoUnitario": 3500.0
+}
+```
+
+### Pagamento Service
+
+Base URL:
+
+```text
+http://localhost:8084
+```
+
+| Metodo | Endpoint | Descricao |
+| --- | --- | --- |
+| POST | `/api/pagamento/processar?pedidoId={pedidoId}&valor={valor}` | Processa pagamento manualmente e publica evento no RabbitMQ |
+
+Exemplo:
+
+```http
+POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=3500.0
+```
+
+### Serviços Sem Endpoint REST Publico
+
+| Serviço | Porta | Como funciona |
+| --- | --- | --- |
+| Pedido Service | `8082` / `9090` | Recebe chamadas gRPC do Carrinho Service na porta `9090` |
+| Estoque Service | `8085` | Consome eventos RabbitMQ de pagamento aprovado |
+| Notificação Service | `8086` | Consome eventos RabbitMQ e simula envio de notificacao |
+
+### Fluxo de Teste Sugerido
+
+1. Criar produto em `POST http://localhost:8081/api/produtos`.
+2. Listar produtos em `GET http://localhost:8081/api/produtos`.
+3. Adicionar produto ao carrinho em `POST http://localhost:8083/api/carrinho/1/adicionar`.
+4. Consultar carrinho em `GET http://localhost:8083/api/carrinho/1`.
+5. Finalizar carrinho em `POST http://localhost:8083/api/carrinho/1/checkout`.
+6. Processar pagamento em `POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=3500.0`.
+7. Verificar logs do Estoque e Notificação:
+
+```bash
+docker compose logs -f estoque-service notificacao-service
+```
+
+> Observacao: atualmente o pagamento ainda e disparado manualmente pelo endpoint REST do Pagamento Service. O fluxo automatico `Pedido -> fila RabbitMQ -> Pagamento` ainda nao esta implementado.
+
 ---
 
-## 📑 Índice
-
-1. [Descrição Técnica](#1-descrição-técnica)
-2. [Arquitetura do Sistema](#2-arquitetura-do-sistema)
-3. [Descrição dos Serviços](#3-descrição-dos-serviços)
-4. [Análise Conceitual — Mapeamento Código × Teoria](#4-análise-conceitual--mapeamento-código--teoria)
-5. [Transparências Aplicadas](#5-transparências-aplicadas)
-6. [Reflexão do Grupo](#6-reflexão-do-grupo)
-7. [Como Executar](#7-como-executar)
-8. [Evidências](#8-evidências)
-
----
-
-## 1. Descrição Técnica
-
-### 1.1 Invocação Remota (RPC) — gRPC
-
-Utilizamos **gRPC** para comunicação **síncrona** entre o serviço de **Carrinho** e o serviço de **Pedido**.
-
-- **Arquivo Proto:** [`pedido.proto`](grpc-contracts/src/main/proto/pedido.proto) — Define o contrato de comunicação com Protocol Buffers.
-- **Servidor gRPC:** [`PedidoGrpcService.java`](pedido-service/src/main/java/com/ecommerce/pedido/service/PedidoGrpcService.java) — Implementa o serviço `CriarPedido` (porta 9090).
-- **Cliente gRPC:** [`CarrinhoService.java`](carrinho-service/src/main/java/com/ecommerce/carrinho/service/CarrinhoService.java) — Injeta o stub `PedidoServiceBlockingStub` e invoca remotamente.
-
-**Como funciona:**
-1. O usuário clica em "Finalizar Compra" no frontend.
-2. O `CarrinhoService` serializa os itens em Protocol Buffers e faz uma chamada gRPC para o `PedidoGrpcService`.
-3. O pedido é persistido no banco e a resposta é retornada com ID e status.
-
-### 1.2 Mensageria e Eventos — RabbitMQ
-
-#### Filas (Processamento Assíncrono) — Direct Exchange
+## 1. Arquitetura do Sistema
 
 Implementamos uma **fila dedicada** com `DirectExchange` para processamento ponto-a-ponto:
 
@@ -224,186 +359,7 @@ O **Spring Cloud** e o **gRPC** atuam como a camada de middleware que:
 
 ## 5. Transparências Aplicadas
 
-### 5.1 Transparência de Localização
-O Eureka Server permite que os serviços se comuniquem via **nomes lógicos** (ex: `pedido-service`, `pagamento-service`) sem conhecer a localização física (IP/Porta). Exemplo concreto: o `CarrinhoService` chama `http://pagamento-service/api/pagamento/processar` — o IP real é resolvido pelo Eureka em tempo de execução.
-
-### 5.2 Transparência de Acesso
-A comunicação via **gRPC** oculta a complexidade da serialização e do protocolo de rede. A chamada `pedidoStub.criarPedido(request)` no `CarrinhoService` é tratada como uma invocação de método local, mas na realidade envolve serialização Protobuf, transmissão HTTP/2, desserialização e processamento remoto.
-
-### 5.3 Transparência de Concorrência
-O RabbitMQ com múltiplos consumidores na **Fanout Exchange** permite que Estoque, Notificação e Pedido processem o mesmo evento de pagamento **em paralelo**, sem interferir uns nos outros. Cada um tem sua fila independente.
-
-### 5.4 Transparência de Falha
-Se o serviço de **Notificação** cair, o fluxo principal (Carrinho → Pedido → Pagamento → Estoque) continua funcionando perfeitamente. As mensagens ficam na fila do RabbitMQ e são consumidas quando o serviço volta a funcionar. Isso evidencia a **resiliência** da arquitetura assíncrona.
-
-### 5.5 Transparência de Replicação
-O sistema está preparado para escalamento horizontal: é possível rodar múltiplas instâncias de um mesmo serviço, e o Eureka fará o balanceamento de carga via `@LoadBalanced`.
-
----
-
-## 6. Reflexão do Grupo
-
-### 6.1 Dificuldades Encontradas
-
-1. **Configuração do gRPC com Spring Boot 3:** A integração do `grpc-spring-boot-starter` com a versão 3 do Spring Boot exigiu atenção especial com a compatibilidade de versões e a geração de stubs via Maven.
-
-2. **Service Discovery com gRPC:** Fazer o cliente gRPC resolver o endereço do servidor via Eureka (usando `discovery:///`) foi desafiador, pois exigiu configuração específica do `grpc-client-spring-boot-starter`.
-
-3. **Diferenciação entre Fila e Pub/Sub:** Compreender na prática a diferença entre uma fila dedicada (Direct Exchange) e o padrão Pub/Sub (Fanout Exchange) exigiu estudo aprofundado da documentação do RabbitMQ.
-
-4. **Orquestração de múltiplos serviços:** Subir 6 microsserviços + infraestrutura em ordem correta exigiu a criação de um script automatizado (`start-all.ps1`).
-
-### 6.2 Decisões Arquiteturais
-
-1. **gRPC entre Carrinho e Pedido:** Escolhemos gRPC para a operação de checkout porque é uma operação **síncrona e crítica** — o usuário precisa saber imediatamente se o pedido foi criado. O gRPC oferece alta performance e tipagem forte via Protobuf.
-
-2. **Fanout Exchange para pagamentos:** O evento de pagamento precisa ser consumido por **múltiplos serviços** (Estoque, Notificação, Pedido), tornando o padrão Pub/Sub a escolha natural.
-
-3. **Direct Exchange para pedido criado:** A notificação de "pedido criado" precisa ir para **apenas um consumidor** (Notificação), por isso usamos Direct Exchange com routing key.
-
-4. **PostgreSQL com schemas separados:** Cada microsserviço usa um schema isolado no mesmo PostgreSQL, simulando bancos independentes sem a complexidade de múltiplas instâncias.
-
-5. **RestTemplate com @LoadBalanced:** Para a chamada REST do Carrinho ao Pagamento, usamos RestTemplate com `@LoadBalanced` para demonstrar o Service Discovery na prática.
-
-### 6.3 Possíveis Melhorias
-
-1. **API Gateway:** Implementar um gateway (Spring Cloud Gateway) para centralizar roteamento, autenticação e rate limiting.
-
-2. **Circuit Breaker:** Adicionar Resilience4j para tolerância a falhas nas chamadas entre serviços.
-
-3. **Dockerização completa:** Containerizar todos os microsserviços Java (atualmente só PostgreSQL e RabbitMQ estão no Docker).
-
-4. **Monitoramento:** Adicionar Spring Boot Actuator + Prometheus + Grafana para observabilidade.
-
-5. **Autenticação:** Implementar JWT para autenticação distribuída entre os serviços.
-
-6. **Saga Pattern:** Implementar o padrão Saga para garantir consistência transacional distribuída no fluxo completo de compra.
-
----
-
-## 7. Como Executar
-
-### Pré-requisitos
-- Docker e Docker Compose
-- Java 21+
-- Maven
-- Node.js 18+ e npm
-
-### Passos
-
-**Opção 1 — Script automatizado (recomendado):**
-```powershell
-.\start-all.ps1
-```
-
-**Opção 2 — Manual:**
-
-1. **Infraestrutura:** Na raiz do projeto:
-   ```bash
-   docker-compose up -d
-   ```
-   Isso sobe PostgreSQL (5432), RabbitMQ (5672/15672) e PgAdmin (5050).
-
-2. **Contratos gRPC:**
-   ```bash
-   cd grpc-contracts
-   mvn install
-   ```
-
-3. **Eureka Server:**
-   ```bash
-   cd eureka-server
-   mvn spring-boot:run
-   ```
-   Aguarde ficar disponível em http://localhost:8761.
-
-4. **Serviços Backend (em terminais separados):**
-   ```bash
-   cd produto-service && mvn spring-boot:run    # porta 8087
-   cd pedido-service && mvn spring-boot:run     # porta 8082 + gRPC 9090
-   cd carrinho-service && mvn spring-boot:run   # porta 8083
-   cd pagamento-service && mvn spring-boot:run  # porta 8084
-   cd estoque-service && mvn spring-boot:run    # porta 8085
-   cd notificacao-service && mvn spring-boot:run # porta 8086
-   ```
-
-5. **Frontend:**
-   ```bash
-   cd frontend
-   npm install
-   npm start
-   ```
-   Acesse http://localhost:3000.
-
-### Portas dos Serviços
-
-| Serviço | Porta | URL |
-|---|---|---|
-| Eureka Dashboard | 8761 | http://localhost:8761 |
-| Produto Service | 8087 | http://localhost:8087/api/produtos |
-| Pedido Service (REST) | 8082 | http://localhost:8082/api/pedidos |
-| Pedido Service (gRPC) | 9090 | — |
-| Carrinho Service | 8083 | http://localhost:8083/api/carrinho |
-| Pagamento Service | 8084 | http://localhost:8084/api/pagamento |
-| Estoque Service | 8085 | — (apenas consumer) |
-| Notificação Service | 8086 | — (apenas consumer) |
-| Frontend React | 3000 | http://localhost:3000 |
-| RabbitMQ Management | 15672 | http://localhost:15672 (guest/guest) |
-| PgAdmin | 5050 | http://localhost:5050 (admin@admin.com/admin) |
-
----
-
-## 8. Evidências
-
-### 8.1 Fluxo Completo de Compra
-
-O fluxo demonstra **todos os conceitos** aplicados:
-
-```
-[Frontend]
-    │
-    ▼ (1) REST: POST /api/carrinho/1/checkout
-[Carrinho Service]
-    │
-    ▼ (2) gRPC: CriarPedido() ──────────────────── INVOCAÇÃO REMOTA (RPC)
-[Pedido Service]
-    │
-    ├─▶ (3) Persiste pedido no banco
-    │
-    ├─▶ (4) RabbitMQ Direct: pedido.exchange ──── FILA (processamento assíncrono)
-    │       └─▶ [Notificação Service] "Pedido criado!"
-    │
-    ▼ (retorno gRPC)
-[Carrinho Service]
-    │
-    ▼ (5) REST + Eureka: POST pagamento-service ─ SERVICE DISCOVERY + REST
-[Pagamento Service]
-    │
-    ▼ (6) RabbitMQ Fanout: pagamento.exchange ─── PUB/SUB (eventos)
-    ├─▶ [Estoque Service] "Reservando produtos"
-    ├─▶ [Notificação Service] "Pagamento aprovado!"
-    └─▶ [Pedido Service] "Status → PAGO"
-```
-
-### 8.2 Onde Cada Conceito Foi Aplicado
-
-| Conceito | Arquivo(s) Principal(is) | Linha-chave |
-|---|---|---|
-| **gRPC Server** | `PedidoGrpcService.java` | `@GrpcService` + `extends PedidoServiceImplBase` |
-| **gRPC Client** | `CarrinhoService.java` | `@GrpcClient("pedido-service")` + `pedidoStub.criarPedido()` |
-| **Proto/IDL** | `pedido.proto` | `service PedidoService { rpc CriarPedido(...) }` |
-| **Fila (Direct)** | `PedidoGrpcService.java` | `rabbitTemplate.convertAndSend(PEDIDO_EXCHANGE, ROUTING_KEY, evento)` |
-| **Pub/Sub (Fanout)** | `PagamentoService.java` | `rabbitTemplate.convertAndSend(PAGAMENTO_EXCHANGE, "", event)` |
-| **Consumer Fila** | `NotificacaoConsumer.java` | `@RabbitListener(queues = PEDIDO_CRIADO_QUEUE)` |
-| **Consumer Pub/Sub** | `PagamentoConsumer.java` (Estoque) | `@RabbitListener(queues = ESTOQUE_QUEUE)` |
-| **Eureka Server** | `EurekaServerApplication.java` | `@EnableEurekaServer` |
-| **Eureka Client** | `CarrinhoServiceApplication.java` | `@EnableDiscoveryClient` |
-| **Service Discovery** | `CarrinhoService.java` | `http://pagamento-service/api/pagamento/processar` |
-| **gRPC via Eureka** | `application.yml` (carrinho) | `address: 'discovery:///pedido-service'` |
-
-### 8.3 Demonstração das Comunicações
-
-Para demonstrar o sistema funcionando, execute o fluxo completo:
+## 5. Mapeamento Teórico
 
 1. **Cadastre produtos** via POST `/api/produtos`
 2. **Adicione ao carrinho** via POST `/api/carrinho/1/adicionar`

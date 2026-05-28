@@ -5,9 +5,9 @@ spring:
   application:
     name: pedido-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=pedido_db
-    username: root
-    password: rootpassword
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=pedido_db}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:rootpassword}
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,6 +15,7 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: ${DB_SCHEMA:pedido_db}
   rabbitmq:
     host: localhost
     port: 5672
@@ -28,4 +29,4 @@ grpc:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
