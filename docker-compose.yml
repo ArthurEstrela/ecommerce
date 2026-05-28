@@ -66,10 +66,10 @@ services:
     ports:
       - "8081:8081"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/postgres?currentSchema=produto_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/produto_db
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword
-      DB_SCHEMA: produto_db
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: public
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       postgres:
@@ -88,10 +88,10 @@ services:
       - "8082:8082"
       - "9090:9090"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/postgres?currentSchema=pedido_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pedido_db
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword
-      DB_SCHEMA: pedido_db
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: public
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: guest
@@ -115,10 +115,10 @@ services:
     ports:
       - "8083:8083"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/postgres?currentSchema=carrinho_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/carrinho_db
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword
-      DB_SCHEMA: carrinho_db
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: public
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       GRPC_CLIENT_PEDIDO_SERVICE_ADDRESS: discovery:///pedido-service
     depends_on:
@@ -160,10 +160,10 @@ services:
     ports:
       - "8085:8085"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/postgres?currentSchema=estoque_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/estoque_db
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword
-      DB_SCHEMA: estoque_db
+      SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA: public
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: guest
@@ -196,6 +196,21 @@ services:
       rabbitmq:
         condition: service_healthy
       eureka-server:
+        condition: service_started
+    networks:
+      - ecommerce-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      produto-service:
+        condition: service_started
+      carrinho-service:
         condition: service_started
     networks:
       - ecommerce-network
