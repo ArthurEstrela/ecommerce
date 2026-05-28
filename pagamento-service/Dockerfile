@@ -3,7 +3,6 @@ FROM maven:3.9.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 
 COPY pagamento-service/pom.xml ./pom.xml
-RUN mvn -q -DskipTests dependency:go-offline
 
 COPY pagamento-service/src ./src
 RUN mvn -q -DskipTests package

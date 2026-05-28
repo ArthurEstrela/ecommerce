@@ -7,7 +7,6 @@ COPY grpc-contracts/src ./grpc-contracts/src
 RUN mvn -q -f grpc-contracts/pom.xml -DskipTests install
 
 COPY pedido-service/pom.xml ./pedido-service/pom.xml
-RUN mvn -q -f pedido-service/pom.xml -DskipTests dependency:go-offline
 
 COPY pedido-service/src ./pedido-service/src
 RUN mvn -q -f pedido-service/pom.xml -DskipTests package
