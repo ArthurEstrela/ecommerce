@@ -5,7 +5,7 @@ spring:
   application:
     name: estoque-service
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=estoque_db}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/estoque_db}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:rootpassword}
   jpa:
@@ -15,7 +15,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        default_schema: ${DB_SCHEMA:estoque_db}
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}

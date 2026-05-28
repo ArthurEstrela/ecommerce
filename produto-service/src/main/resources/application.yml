@@ -5,7 +5,7 @@ spring:
   application:
     name: produto-service
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=produto_db}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/produto_db}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:rootpassword}
   jpa:
@@ -15,7 +15,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        default_schema: ${DB_SCHEMA:produto_db}
 
 eureka:
   client:
