@@ -169,7 +169,9 @@ docker compose logs -f estoque-service notificacao-service
 
 ---
 
-## 1. Arquitetura do Sistema
+## 1. Descrição Técnica — Comunicação entre Serviços
+
+### 1.1 Comunicação Assíncrona — Fila Dedicada (Direct Exchange)
 
 Implementamos uma **fila dedicada** com `DirectExchange` para processamento ponto-a-ponto:
 
@@ -181,7 +183,7 @@ Implementamos uma **fila dedicada** com `DirectExchange` para processamento pont
 - **Fila (Direct):** 1 mensagem → 1 consumidor (ponto-a-ponto)
 - **Pub/Sub (Fanout):** 1 mensagem → N consumidores (broadcast)
 
-#### Publish/Subscribe (Eventos) — Fanout Exchange
+### 1.2 Publish/Subscribe (Eventos) — Fanout Exchange
 
 Implementamos o padrão **Pub/Sub** com `FanoutExchange` para eventos de pagamento:
 
@@ -202,7 +204,7 @@ Cada serviço possui sua própria fila (`estoque.queue`, `notificacao.queue`, `p
 
 ---
 
-## 2. Arquitetura do Sistema
+## 2. Diagrama de Arquitetura
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -359,11 +361,134 @@ O **Spring Cloud** e o **gRPC** atuam como a camada de middleware que:
 
 ## 5. Transparências Aplicadas
 
-## 5. Mapeamento Teórico
+A seguir identificamos e discutimos as transparências de sistemas distribuídos (conforme Coulouris et al.) que foram aplicadas no projeto:
 
-1. **Cadastre produtos** via POST `/api/produtos`
-2. **Adicione ao carrinho** via POST `/api/carrinho/1/adicionar`
-3. **Faça checkout** via POST `/api/carrinho/1/checkout`
+### 5.1 Transparência de Acesso
+
+A chamada gRPC no `CarrinhoService.java` utiliza o stub `pedidoStub.criarPedido(request)`, que **parece uma chamada de método local**, embora invoque um serviço remoto rodando em outro container (Pedido Service, porta 9090). O desenvolvedor não precisa lidar diretamente com sockets, serialização ou protocolos de rede — o gRPC abstrai tudo isso.
+
+**Onde no código:** `CarrinhoService.java` — linha `pedidoStub.criarPedido(request)`.
+
+### 5.2 Transparência de Localização
+
+Os serviços **não conhecem o endereço IP/porta** uns dos outros. Toda a resolução é feita por nomes lógicos registrados no Eureka:
+
+- **REST:** O `CarrinhoService` chama `http://pagamento-service/api/pagamento/processar` — o `@LoadBalanced RestTemplate` resolve o nome `pagamento-service` via Eureka automaticamente.
+- **gRPC:** O canal gRPC usa `discovery:///pedido-service` no `application.yml`, resolvendo o endereço do Pedido Service pelo Eureka sem hardcoding de IP.
+
+Se um serviço mudar de IP ou porta, nenhum código precisa ser alterado — basta que ele se registre novamente no Eureka.
+
+**Onde no código:** `RestConfig.java` (`@LoadBalanced`) e `docker-compose.yml` (`GRPC_CLIENT_PEDIDO_SERVICE_ADDRESS`).
+
+### 5.3 Transparência de Falha
+
+O `CarrinhoService.java` implementa um bloco `try-catch` ao chamar o serviço de pagamento via REST. Se o Pagamento Service estiver indisponível, o sistema **não quebra** — registra um aviso no log e o pedido permanece criado (pode ser processado posteriormente).
+
+Além disso, as filas do RabbitMQ são configuradas como **duráveis** (`new Queue("pedido.criado.queue", true)`), garantindo que mensagens não sejam perdidas caso um consumidor esteja temporariamente offline.
+
+**Onde no código:** `CarrinhoService.java` — bloco `try-catch` na chamada REST ao pagamento; `RabbitConfig.java` — filas duráveis.
+
+### 5.4 Transparência de Concorrência
+
+Os 3 consumidores da Fanout Exchange (`pagamento.exchange`) — Estoque, Notificação e Pedido — processam o **mesmo evento de pagamento de forma independente e concorrente**, sem interferência entre si. Cada um possui sua própria fila (`estoque.queue`, `notificacao.queue`, `pedido.pagamento.queue`), eliminando condições de corrida.
+
+O RabbitMQ também garante que, dentro de uma mesma fila (Direct Exchange), mensagens sejam entregues a **um único consumidor por vez**, evitando processamento duplicado.
+
+**Onde no código:** `RabbitConfig.java` de cada serviço — filas separadas vinculadas à mesma FanoutExchange.
+
+### 5.5 Transparência de Migração
+
+O uso de **Docker Compose** permite que qualquer microsserviço seja migrado para outro host sem alteração de código. Como a comunicação é feita por nomes lógicos (via Eureka e DNS interno do Docker), basta reconfigurar o `docker-compose.yml` para mover um container — os demais serviços continuam funcionando normalmente.
+
+**Onde no código:** `docker-compose.yml` — todos os serviços referenciados por nome de container na rede `ecommerce-network`.
+
+### 5.6 Transparência de Replicação
+
+Esta transparência **não foi implementada de forma explícita** neste projeto. No entanto, a arquitetura está preparada para isso: o Eureka suporta múltiplas instâncias do mesmo serviço, e o `@LoadBalanced RestTemplate` faria balanceamento de carga automaticamente entre réplicas. Da mesma forma, o RabbitMQ distribui mensagens entre consumidores concorrentes na mesma fila (competing consumers pattern).
+
+---
+
+## 6. Reflexão do Grupo
+
+### 6.1 Dificuldades Encontradas
+
+- **Integração gRPC com Eureka:** A configuração do cliente gRPC para resolver endereços via Service Discovery (`discovery:///`) foi um dos maiores desafios. A documentação do `grpc-spring-boot-starter` para uso com Eureka é limitada, e foi necessário ajustar dependências e configurações do `application.yml` até funcionar corretamente.
+- **Ordem de inicialização dos containers:** Como os microsserviços dependem do PostgreSQL, RabbitMQ e Eureka, foi necessário configurar `healthchecks` e `depends_on` com `condition: service_healthy` para evitar falhas de conexão durante a inicialização.
+- **Serialização de mensagens no RabbitMQ:** Inicialmente, as mensagens eram serializadas como objetos Java, causando erros de deserialização entre serviços diferentes. A solução foi usar `Jackson2JsonMessageConverter` para todas as mensagens.
+- **Separação entre Direct Exchange e Fanout Exchange:** Entender conceitualmente e implementar corretamente a diferença entre fila ponto-a-ponto (Direct) e broadcast (Fanout) exigiu estudo aprofundado da documentação do RabbitMQ.
+
+### 6.2 Decisões Arquiteturais
+
+- **Direct Exchange para "pedido criado" vs Fanout Exchange para "pagamento aprovado":** A criação de pedido gera uma notificação ponto-a-ponto (apenas o serviço de Notificação precisa saber), enquanto o pagamento aprovado precisa ser propagado para múltiplos serviços (Estoque, Notificação, Pedido) — justificando o uso de Fanout.
+- **gRPC para Carrinho → Pedido e REST para Carrinho → Pagamento:** Usamos gRPC na comunicação mais crítica (criação de pedido, que envolve dados complexos com itens) e REST na chamada ao pagamento (mais simples, apenas pedidoId e valor), demonstrando ambos os padrões de comunicação síncrona.
+- **Banco de dados separado por serviço:** Cada microsserviço tem seu próprio database lógico no PostgreSQL (`produto_db`, `carrinho_db`, `pedido_db`, `estoque_db`), respeitando o princípio de isolamento de dados em microsserviços.
+- **Estoque e Notificação como serviços propostos:** Escolhemos esses dois serviços adicionais porque demonstram claramente os padrões de Pub/Sub (Estoque consome eventos de pagamento) e Fila (Notificação consome eventos de pedido criado).
+
+### 6.3 Possíveis Melhorias
+
+- **API Gateway:** Implementar um gateway (Spring Cloud Gateway) para centralizar o roteamento, autenticação e rate limiting.
+- **Circuit Breaker:** Adicionar Resilience4j para proteger chamadas entre serviços contra falhas em cascata.
+- **Autenticação e Autorização:** Implementar JWT e Spring Security para proteger os endpoints.
+- **Saga Pattern:** Implementar o padrão Saga para garantir consistência eventual no fluxo Pedido → Pagamento → Estoque, com compensação em caso de falha.
+- **Monitoramento:** Adicionar Spring Actuator, Prometheus e Grafana para observabilidade.
+- **Testes automatizados:** Adicionar testes de integração com Testcontainers para validar as comunicações entre serviços.
+- **Pagamento real:** Integrar com um gateway de pagamento simulado mais robusto, com estados intermediários (pendente, processando, aprovado, recusado).
+
+---
+
+## 7. Evidências do Sistema Funcionando
+
+### 7.1 Fluxo de Teste Completo
+
+Para reproduzir o funcionamento do sistema:
+
+1. **Cadastre produtos** via `POST http://localhost:8081/api/produtos`
+2. **Adicione ao carrinho** via `POST http://localhost:8083/api/carrinho/1/adicionar`
+3. **Faça checkout** via `POST http://localhost:8083/api/carrinho/1/checkout`
 4. **Observe nos logs** de cada serviço as mensagens de comunicação
 5. **Verifique no RabbitMQ** (http://localhost:15672) as filas e exchanges criadas
-6. **Consulte pedidos** via GET `/api/pedidos` para ver o status "PAGO"
+6. **Consulte pedidos** via `GET http://localhost:8082/api/pedidos` para ver o status "PAGO"
+
+### 7.2 Prints do Sistema
+
+> **Nota:** As capturas de tela abaixo demonstram o sistema funcionando com todos os conceitos distribuídos aplicados.
+
+#### Eureka Dashboard — Serviços Registrados
+
+<!-- Inserir print do Eureka Dashboard (http://localhost:8761) mostrando todos os 6 serviços registrados -->
+*Captura: Eureka Dashboard exibindo os serviços produto-service, carrinho-service, pedido-service, pagamento-service, estoque-service e notificacao-service registrados.*
+
+#### RabbitMQ — Exchanges e Filas
+
+<!-- Inserir print do RabbitMQ Management (http://localhost:15672) mostrando as exchanges -->
+*Captura: RabbitMQ Management mostrando a `pedido.exchange` (Direct) e `pagamento.exchange` (Fanout) com suas respectivas filas vinculadas.*
+
+#### Logs — Comunicação gRPC (Carrinho → Pedido)
+
+<!-- Inserir print dos logs do carrinho-service e pedido-service durante o checkout -->
+*Captura: Logs mostrando o CarrinhoService invocando `criarPedido()` via gRPC e o PedidoGrpcService processando a requisição.*
+
+#### Logs — Fila Dedicada (Direct Exchange)
+
+<!-- Inserir print dos logs do notificacao-service recebendo evento de pedido criado -->
+*Captura: Logs do Notificação Service mostrando o consumo da mensagem "pedido.criado" via fila dedicada (Direct Exchange).*
+
+#### Logs — Pub/Sub (Fanout Exchange)
+
+<!-- Inserir print dos logs dos 3 consumidores recebendo o evento de pagamento -->
+*Captura: Logs simultâneos do Estoque Service, Notificação Service e Pedido Service recebendo o evento de pagamento aprovado via Fanout Exchange.*
+
+#### Frontend — Interface do Usuário
+
+<!-- Inserir print do frontend React mostrando a lista de produtos e o carrinho -->
+*Captura: Interface do e-commerce mostrando catálogo de produtos e funcionalidade de carrinho.*
+
+### 7.3 Onde Cada Conceito Foi Aplicado
+
+| Conceito | Serviços Envolvidos | Arquivo Principal | Evidência |
+|---|---|---|---|
+| **gRPC (RPC)** | Carrinho → Pedido | `CarrinhoService.java` / `PedidoGrpcService.java` | Checkout cria pedido via chamada remota |
+| **Fila (Direct Exchange)** | Pedido → Notificação | `PedidoGrpcService.java` / `NotificacaoConsumer.java` | Notificação de "pedido criado" ponto-a-ponto |
+| **Pub/Sub (Fanout Exchange)** | Pagamento → Estoque, Notificação, Pedido | `PagamentoService.java` / 3 consumers | Evento "pagamento aprovado" para N subscribers |
+| **Service Discovery** | Todos → Eureka | `EurekaServerApplication.java` + `application.yml` | Resolução por nome lógico (REST e gRPC) |
+| **Comunicação entre Serviços** | Carrinho → Pagamento | `CarrinhoService.java` + `@LoadBalanced` | REST via nome lógico do Eureka |
