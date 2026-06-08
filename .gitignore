@@ -28,3 +28,4 @@ Thumbs.db
 # Arquivos de crash da JVM
 hs_err_pid*.log
 replay_pid*.log
+/.md
