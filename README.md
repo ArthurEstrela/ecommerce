@@ -19,17 +19,18 @@ Sistema de e-commerce desenvolvido como projeto prático da disciplina de **Sist
 
 ## Visão geral
 
-O projeto é composto por seis microsserviços backend, um servidor de descoberta, um frontend React e infraestrutura local com PostgreSQL, RabbitMQ e pgAdmin.
+O projeto é composto por seis microsserviços backend, um servidor de descoberta, um API Gateway, um frontend React e infraestrutura local com PostgreSQL, RabbitMQ e pgAdmin.
 
 Fluxo principal:
 
 1. O usuário visualiza produtos no frontend.
-2. O frontend adiciona itens ao carrinho via Carrinho Service.
+2. O frontend adiciona itens ao carrinho via Carrinho Service (passando pelo API Gateway).
 3. O Carrinho Service cria o pedido chamando o Pedido Service via gRPC.
 4. O Pedido Service persiste o pedido e publica o evento `pedido.criado` em uma fila dedicada.
 5. O Carrinho Service solicita o pagamento automaticamente via REST usando o nome lógico `pagamento-service`.
 6. O Pagamento Service publica o evento `pagamento.aprovado` em uma Fanout Exchange.
 7. Pedido, Estoque e Notificação consomem o evento de pagamento de forma independente.
+8. Todas as requisições do frontend passam pelo API Gateway, que faz o roteamento inteligente (`lb://`), controle de CORS, rate limiting e circuit breaker.
 
 ## Arquitetura
 
@@ -41,28 +42,28 @@ Fluxo principal:
                                         |
                                         | registro/descoberta
                                         |
-+------------------+          +---------v--------+        gRPC        +----------------------+
-| Frontend :3000   |  REST    | Carrinho :8083   | ----------------> | Pedido :8082 / :9090 |
-| React + Nginx    | -------> | REST + gRPC      |                   | REST + gRPC + AMQP   |
-+------------------+          +---------+--------+                   +----------+-----------+
-            |                           |                                      |
-            | REST                      | REST via Eureka                      | Direct Exchange
-            v                           v                                      | pedido.exchange
-+------------------+          +------------------+                            v
-| Produto :8081    |          | Pagamento :8084  |                   +----------------------+
-| Catálogo REST    |          | AMQP Publisher   |                   | Notificação :8086    |
-+------------------+          +---------+--------+                   | Consome fila direta  |
-                                      |                              +----------------------+
-                                      |
-                                      | Fanout Exchange pagamento.exchange
-                                      |
-                         +------------+-------------+
-                         |            |             |
-                         v            v             v
-                +-------------+ +-------------+ +-------------+
-                | Pedido      | | Estoque     | | Notificação |
-                | Consumer    | | Consumer    | | Consumer    |
-                +-------------+ +-------------+ +-------------+
+                                  +---------v--------+
++------------------+  HTTP        | API Gateway :8080|
+| Frontend :3000   | -----------> | Spring Cloud GW  |
+| React + Nginx    |              +---------+--------+
++------------------+                        | lb:// (Eureka)
+             +------------------------------+-----------------------+
+             |                              |                       |
+             v                              v                       v
++------------------+              +---------+--------+        +-----v--------------+        gRPC        +----------------------+
+| Produto :8081    |              | Pagamento :8084  |        | Carrinho :8083     | ----------------> | Pedido :8082 / :9090 |
+| Catálogo REST    |              | AMQP Publisher   |        | REST + gRPC        |                   | REST + gRPC + AMQP   |
++------------------+              +---------+--------+        +--------------------+                   +----------+-----------+
+                                          |                                                                       |
+                                          | Fanout Exchange pagamento.exchange                                    | Direct Exchange
+                                          |                                                                       | pedido.exchange
+                             +------------+-------------+                                                         v
+                             |            |             |                                              +----------------------+
+                             v            v             v                                              | Notificação :8086    |
+                    +-------------+ +-------------+ +-------------+                                    | Consome fila direta  |
+                    | Pedido      | | Estoque     | | Notificação |                                    +----------------------+
+                    | Consumer    | | Consumer    | | Consumer    |
+                    +-------------+ +-------------+ +-------------+
 ```
 
 ## Stack tecnológica
@@ -71,6 +72,8 @@ Fluxo principal:
 | --- | --- |
 | Java 21 | Linguagem dos microsserviços |
 | Spring Boot 3.2 | APIs REST, serviços e persistência |
+| Spring Cloud Gateway | API Gateway (roteamento, CORS, Circuit Breaker, Rate Limiting) |
+| Resilience4j | Circuit Breaker e Time Limiter no Gateway |
 | Spring Cloud Netflix Eureka | Service Discovery |
 | gRPC + Protocol Buffers | RPC entre Carrinho e Pedido |
 | RabbitMQ | Filas, eventos e Pub/Sub |
@@ -84,6 +87,7 @@ Fluxo principal:
 | Serviço | Porta | Responsabilidade | Banco |
 | --- | ---: | --- | --- |
 | Frontend | `3000` | Interface web do e-commerce | - |
+| API Gateway | `8080` | Ponto único de entrada, roteamento, CORS e resiliência | - |
 | Eureka Server | `8761` | Registro e descoberta de serviços | - |
 | Produto Service | `8081` | Catálogo e CRUD de produtos | `produto_db` |
 | Pedido Service | `8082` REST / `9090` gRPC | Criação e consulta de pedidos | `pedido_db` |
@@ -116,6 +120,7 @@ Esse comando constrói e inicia todos os serviços:
 - pgAdmin
 - RabbitMQ
 - Eureka Server
+- API Gateway
 - Produto Service
 - Pedido Service
 - Carrinho Service
@@ -167,6 +172,8 @@ docker compose down -v
 | Recurso | URL | Credenciais |
 | --- | --- | --- |
 | Frontend | http://localhost:3000 | - |
+| API Gateway | http://localhost:8080 | - |
+| Gateway Actuator | http://localhost:8080/actuator/health | - |
 | Eureka Dashboard | http://localhost:8761 | - |
 | RabbitMQ Management | http://localhost:15672 | `guest` / `guest` |
 | pgAdmin | http://localhost:5050 | `admin@admin.com` / `admin` |
@@ -176,9 +183,12 @@ O `init.sql` cria os bancos `produto_db`, `carrinho_db`, `pedido_db` e `estoque_
 
 ## Endpoints REST
 
+> **Atenção:** Todos os endpoints REST agora passam pelo **API Gateway** na porta `8080`.
+> As portas originais (8081, 8082, etc) continuam ativas para comunicação interna, mas o uso via Gateway é recomendado.
+
 ### Produto Service
 
-Base URL: `http://localhost:8081`
+Base URL: `http://localhost:8080`
 
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
@@ -190,7 +200,7 @@ Base URL: `http://localhost:8081`
 Exemplo:
 
 ```http
-POST http://localhost:8081/api/produtos
+POST http://localhost:8080/api/produtos
 Content-Type: application/json
 ```
 
@@ -205,7 +215,7 @@ Content-Type: application/json
 
 ### Carrinho Service
 
-Base URL: `http://localhost:8083`
+Base URL: `http://localhost:8080`
 
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
@@ -216,7 +226,7 @@ Base URL: `http://localhost:8083`
 Exemplo:
 
 ```http
-POST http://localhost:8083/api/carrinho/1/adicionar
+POST http://localhost:8080/api/carrinho/1/adicionar
 Content-Type: application/json
 ```
 
@@ -230,7 +240,7 @@ Content-Type: application/json
 
 ### Pedido Service
 
-Base URL: `http://localhost:8082`
+Base URL: `http://localhost:8080`
 
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
@@ -242,7 +252,7 @@ O Pedido Service também expõe um servidor gRPC na porta `9090`, definido em `g
 
 ### Pagamento Service
 
-Base URL: `http://localhost:8084`
+Base URL: `http://localhost:8080`
 
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
@@ -251,7 +261,7 @@ Base URL: `http://localhost:8084`
 Exemplo:
 
 ```http
-POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=7299.0
+POST http://localhost:8080/api/pagamento/processar?pedidoId=1&valor=7299.0
 ```
 
 ### Serviços sem endpoint REST público
@@ -271,7 +281,7 @@ POST http://localhost:8084/api/pagamento/processar?pedidoId=1&valor=7299.0
 4. Consulte os logs dos serviços para acompanhar gRPC, REST e RabbitMQ.
 
 ```bash
-docker compose logs -f carrinho-service pedido-service pagamento-service estoque-service notificacao-service
+docker compose logs -f api-gateway carrinho-service pedido-service pagamento-service estoque-service notificacao-service
 ```
 
 ### Pela API
@@ -279,13 +289,13 @@ docker compose logs -f carrinho-service pedido-service pagamento-service estoque
 1. Liste os produtos:
 
 ```bash
-curl http://localhost:8081/api/produtos
+curl http://localhost:8080/api/produtos
 ```
 
 2. Adicione um produto ao carrinho:
 
 ```bash
-curl -X POST http://localhost:8083/api/carrinho/1/adicionar \
+curl -X POST http://localhost:8080/api/carrinho/1/adicionar \
   -H "Content-Type: application/json" \
   -d '{"produtoId":1,"quantidade":1,"precoUnitario":7299.0}'
 ```
@@ -293,19 +303,19 @@ curl -X POST http://localhost:8083/api/carrinho/1/adicionar \
 3. Consulte o carrinho:
 
 ```bash
-curl http://localhost:8083/api/carrinho/1
+curl http://localhost:8080/api/carrinho/1
 ```
 
 4. Faça checkout:
 
 ```bash
-curl -X POST http://localhost:8083/api/carrinho/1/checkout
+curl -X POST http://localhost:8080/api/carrinho/1/checkout
 ```
 
 5. Consulte os pedidos:
 
 ```bash
-curl http://localhost:8082/api/pedidos
+curl http://localhost:8080/api/pedidos
 ```
 
 6. Verifique as filas e exchanges no RabbitMQ Management:
@@ -393,6 +403,7 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 
 | Serviço | Descrição |
 | --- | --- |
+| API Gateway | Ponto único de entrada para todas as requisições externas. Centraliza roteamento, CORS, resiliência e observabilidade. |
 | Produto Service | Gerencia o catálogo de produtos e persiste dados em `produto_db`. |
 | Carrinho Service | Gerencia o carrinho do usuário, calcula total e orquestra o checkout. |
 | Pedido Service | Recebe chamadas gRPC, cria pedidos, publica evento de pedido criado e atualiza status após pagamento. |
@@ -450,9 +461,9 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 
 ### Possíveis melhorias
 
-- Adicionar API Gateway com Spring Cloud Gateway.
+- ~~Adicionar API Gateway com Spring Cloud Gateway.~~ (Implementado!)
 - Adicionar autenticação com Spring Security e JWT.
-- Implementar Circuit Breaker com Resilience4j.
+- ~~Implementar Circuit Breaker com Resilience4j.~~ (Implementado no Gateway!)
 - Evoluir o fluxo para Saga Pattern com compensações.
 - Adicionar observabilidade com Spring Actuator, Prometheus e Grafana.
 - Criar testes de integração com Testcontainers.
@@ -541,6 +552,7 @@ Esta seção apresenta os prints capturados do sistema em execução e das comun
 
 ```text
 .
+├── api-gateway/            # API Gateway centralizado com Spring Cloud Gateway e Resilience4j
 ├── carrinho-service/       # API de carrinho e cliente gRPC
 ├── estoque-service/        # Consumidor de eventos de pagamento
 ├── eureka-server/          # Service Discovery

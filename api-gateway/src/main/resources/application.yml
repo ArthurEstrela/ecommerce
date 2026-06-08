@@ -1,0 +1,196 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      # ═══════════════════════════════════════════════
+      # CORS Global
+      # ═══════════════════════════════════════════════
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "http://frontend:80"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+      # ═══════════════════════════════════════════════
+      # Filtros Globais
+      # ═══════════════════════════════════════════════
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+
+      # ═══════════════════════════════════════════════
+      # Rotas dos Microsserviços
+      # ═══════════════════════════════════════════════
+      routes:
+        # ─── Produto Service ───
+        - id: produto-service
+          uri: lb://produto-service
+          predicates:
+            - Path=/api/produtos/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: produtoCircuitBreaker
+                fallbackUri: forward:/fallback/produto
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                methods: GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+
+        # ─── Carrinho Service ───
+        - id: carrinho-service
+          uri: lb://carrinho-service
+          predicates:
+            - Path=/api/carrinho/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: carrinhoCircuitBreaker
+                fallbackUri: forward:/fallback/carrinho
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                methods: GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+
+        # ─── Pedido Service ───
+        - id: pedido-service
+          uri: lb://pedido-service
+          predicates:
+            - Path=/api/pedidos/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: pedidoCircuitBreaker
+                fallbackUri: forward:/fallback/pedido
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                methods: GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+
+        # ─── Pagamento Service ───
+        - id: pagamento-service
+          uri: lb://pagamento-service
+          predicates:
+            - Path=/api/pagamento/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: pagamentoCircuitBreaker
+                fallbackUri: forward:/fallback/pagamento
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                methods: GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+
+      # ═══════════════════════════════════════════════
+      # Discovery Locator
+      # ═══════════════════════════════════════════════
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+# ═══════════════════════════════════════════════
+# Eureka Client
+# ═══════════════════════════════════════════════
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+# ═══════════════════════════════════════════════
+# Resilience4j Circuit Breaker
+# ═══════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+    instances:
+      produtoCircuitBreaker:
+        baseConfig: default
+      carrinhoCircuitBreaker:
+        baseConfig: default
+      pedidoCircuitBreaker:
+        baseConfig: default
+      pagamentoCircuitBreaker:
+        baseConfig: default
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 5s
+    instances:
+      produtoCircuitBreaker:
+        baseConfig: default
+      carrinhoCircuitBreaker:
+        baseConfig: default
+      pedidoCircuitBreaker:
+        baseConfig: default
+      pagamentoCircuitBreaker:
+        baseConfig: default
+
+# ═══════════════════════════════════════════════
+# Actuator
+# ═══════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# ═══════════════════════════════════════════════
+# Logging
+# ═══════════════════════════════════════════════
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.ecommerce.gateway: DEBUG
+    io.github.resilience4j: DEBUG
