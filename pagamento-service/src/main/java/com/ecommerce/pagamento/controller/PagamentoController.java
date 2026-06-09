@@ -12,8 +12,8 @@ public class PagamentoController {
     private final PagamentoService pagamentoService;
 
     @PostMapping("/processar")
-    public String pagar(@RequestParam Long pedidoId, @RequestParam Double valor) {
-        pagamentoService.processarPagamento(pedidoId, valor);
+    public String pagar(@RequestParam Long pedidoId) {
+        pagamentoService.processarPagamento(pedidoId);
         return "Pagamento processado com sucesso!";
     }
 }

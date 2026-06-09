@@ -1,5 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getCarrinho, checkout } from '../services/api';
+import {
+  alterarQuantidadeItem,
+  checkout,
+  getCarrinho,
+  getProdutos,
+  processarPagamento,
+  removerItemCarrinho
+} from '../services/api';
 
 interface Item {
   id: number;
@@ -8,7 +15,14 @@ interface Item {
   precoUnitario: number;
 }
 
+interface Produto {
+  id: number;
+  nome: string;
+}
+
 interface CartProps {
+  usuarioId: number;
+  refreshKey: number;
   onCartUpdate: (count: number) => void;
 }
 
@@ -17,18 +31,28 @@ const getProductEmoji = (id: number) => {
   return emojis[(id - 1) % emojis.length] || '📦';
 };
 
-const Cart: React.FC<CartProps> = ({ onCartUpdate }) => {
+const sortCartItems = (items: Item[]) => [...items].sort((a, b) => a.id - b.id);
+const getPedidoIdFromMessage = (message: string) => {
+  const match = message.match(/Pedido #(\d+)/);
+  return match ? Number(match[1]) : null;
+};
+
+const Cart: React.FC<CartProps> = ({ usuarioId, refreshKey, onCartUpdate }) => {
   const [itens, setItens] = useState<Item[]>([]);
+  const [produtos, setProdutos] = useState<Record<number, Produto>>({});
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [updatingItemId, setUpdatingItemId] = useState<number | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
-  const usuarioId = 1;
+  const [pendingPedidoId, setPendingPedidoId] = useState<number | null>(null);
 
-  const loadCart = useCallback(() => {
-    setLoading(true);
+  const loadCart = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true);
+
     getCarrinho(usuarioId)
       .then(res => {
-        const cartItems = res.data.itens || [];
+        const cartItems = sortCartItems(res.data.itens || []);
         setItens(cartItems);
         onCartUpdate(cartItems.reduce((acc: number, item: Item) => acc + item.quantidade, 0));
         setLoading(false);
@@ -40,28 +64,58 @@ const Cart: React.FC<CartProps> = ({ onCartUpdate }) => {
   }, [onCartUpdate, usuarioId]);
 
   useEffect(() => {
-    loadCart();
+    let active = true;
+
+    const loadProducts = () => {
+      getProdutos()
+        .then(res => {
+          if (!active) return;
+          const productMap = (res.data || []).reduce((acc: Record<number, Produto>, produto: Produto) => {
+            acc[produto.id] = produto;
+            return acc;
+          }, {});
+          setProdutos(productMap);
+        })
+        .catch(err => console.error("Erro ao buscar produtos para o carrinho", err));
+    };
+
+    loadProducts();
+    const interval = setInterval(loadProducts, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    setItens([]);
+    setSuccessMsg('');
+    setPendingPedidoId(null);
+    onCartUpdate(0);
+    loadCart(true);
     
     const interval = setInterval(() => {
-      getCarrinho(usuarioId).then(res => {
-        const cartItems = res.data.itens || [];
-        setItens(cartItems);
-        onCartUpdate(cartItems.reduce((acc: number, item: Item) => acc + item.quantidade, 0));
-      }).catch(() => {});
-    }, 2000);
+      loadCart(false);
+    }, 5000);
     
     return () => clearInterval(interval);
   }, [loadCart, usuarioId, onCartUpdate]);
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      loadCart(false);
+    }
+  }, [refreshKey, loadCart]);
 
   const handleCheckout = () => {
     setCheckoutLoading(true);
     checkout(usuarioId)
       .then(res => {
         setSuccessMsg(res.data);
+        setPendingPedidoId(getPedidoIdFromMessage(res.data));
         setItens([]);
         onCartUpdate(0);
-        
-        setTimeout(() => setSuccessMsg(''), 10000);
       })
       .catch(err => {
         alert("Erro no checkout: " + (err.response?.data || err.message));
@@ -69,6 +123,54 @@ const Cart: React.FC<CartProps> = ({ onCartUpdate }) => {
       .finally(() => {
         setCheckoutLoading(false);
       });
+  };
+
+  const handleQuantityChange = (item: Item, quantidade: number) => {
+    if (quantidade <= 0) {
+      handleRemoveItem(item.id);
+      return;
+    }
+
+    setUpdatingItemId(item.id);
+    alterarQuantidadeItem(usuarioId, item.id, quantidade)
+      .then(res => {
+        const cartItems = sortCartItems(res.data.itens || []);
+        setItens(cartItems);
+        onCartUpdate(cartItems.reduce((acc: number, cartItem: Item) => acc + cartItem.quantidade, 0));
+      })
+      .catch(err => {
+        alert("Erro ao alterar quantidade: " + (err.response?.data?.message || err.response?.data || err.message));
+      })
+      .finally(() => setUpdatingItemId(null));
+  };
+
+  const handleRemoveItem = (itemId: number) => {
+    setUpdatingItemId(itemId);
+    removerItemCarrinho(usuarioId, itemId)
+      .then(res => {
+        const cartItems = sortCartItems(res.data.itens || []);
+        setItens(cartItems);
+        onCartUpdate(cartItems.reduce((acc: number, cartItem: Item) => acc + cartItem.quantidade, 0));
+      })
+      .catch(err => {
+        alert("Erro ao remover item: " + (err.response?.data?.message || err.response?.data || err.message));
+      })
+      .finally(() => setUpdatingItemId(null));
+  };
+
+  const handleProcessPayment = () => {
+    if (!pendingPedidoId) return;
+
+    setPaymentLoading(true);
+    processarPagamento(pendingPedidoId)
+      .then(res => {
+        setSuccessMsg(`${res.data} Pedido #${pendingPedidoId} atualizado para PAGO.`);
+        setPendingPedidoId(null);
+      })
+      .catch(err => {
+        alert("Erro ao processar pagamento: " + (err.response?.data?.message || err.response?.data || err.message));
+      })
+      .finally(() => setPaymentLoading(false));
   };
 
   const total = itens.reduce((acc, i) => acc + (i.precoUnitario * i.quantidade), 0);
@@ -106,8 +208,37 @@ const Cart: React.FC<CartProps> = ({ onCartUpdate }) => {
                   <div className="cart-item-info">
                     <div className="cart-item-icon">{getProductEmoji(item.produtoId)}</div>
                     <div className="cart-item-details">
-                      <h4>Produto #{item.produtoId}</h4>
-                      <span>Qtd: {item.quantidade}</span>
+                      <h4>{produtos[item.produtoId]?.nome || `Produto #${item.produtoId}`}</h4>
+                      <span>Produto #{item.produtoId}</span>
+                      <div className="cart-item-controls">
+                        <button
+                          type="button"
+                          className="quantity-btn"
+                          onClick={() => handleQuantityChange(item, item.quantidade - 1)}
+                          disabled={updatingItemId === item.id}
+                          aria-label="Diminuir quantidade"
+                        >
+                          -
+                        </button>
+                        <span className="quantity-value">{item.quantidade}</span>
+                        <button
+                          type="button"
+                          className="quantity-btn"
+                          onClick={() => handleQuantityChange(item, item.quantidade + 1)}
+                          disabled={updatingItemId === item.id}
+                          aria-label="Aumentar quantidade"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          className="remove-item-btn"
+                          onClick={() => handleRemoveItem(item.id)}
+                          disabled={updatingItemId === item.id}
+                        >
+                          Remover
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div className="cart-item-price">
@@ -149,9 +280,16 @@ const Cart: React.FC<CartProps> = ({ onCartUpdate }) => {
             <div className="success-banner-icon">🎉</div>
             <div className="success-banner-text">
               {successMsg}
-              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Verifique os logs dos microsserviços para acompanhar o processamento assíncrono (RabbitMQ).
-              </div>
+              {pendingPedidoId && (
+                <button
+                  type="button"
+                  className="btn btn-payment"
+                  onClick={handleProcessPayment}
+                  disabled={paymentLoading}
+                >
+                  {paymentLoading ? 'Processando pagamento...' : `Processar pagamento do pedido #${pendingPedidoId}`}
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -6,9 +6,11 @@ interface Produto {
   nome: string;
   descricao: string;
   preco: number;
+  estoque: number;
 }
 
 interface ProductListProps {
+  usuarioId: number;
   onAddToCart: () => void;
 }
 
@@ -18,22 +20,36 @@ const getProductEmoji = (id: number) => {
   return emojis[(id - 1) % emojis.length] || '📦';
 };
 
-const ProductList: React.FC<ProductListProps> = ({ onAddToCart }) => {
+const ProductList: React.FC<ProductListProps> = ({ usuarioId, onAddToCart }) => {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingId, setAddingId] = useState<number | null>(null);
-  const usuarioId = 1; // Simulação de usuário logado
 
   useEffect(() => {
-    getProdutos()
-      .then(res => {
-        setProdutos(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Erro ao buscar produtos", err);
-        setLoading(false);
-      });
+    let active = true;
+
+    const loadProducts = (showLoading = false) => {
+      if (showLoading) setLoading(true);
+
+      getProdutos()
+        .then(res => {
+          if (!active) return;
+          setProdutos(res.data);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error("Erro ao buscar produtos", err);
+          if (active) setLoading(false);
+        });
+    };
+
+    loadProducts(true);
+    const interval = setInterval(() => loadProducts(false), 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error') => {
@@ -60,11 +76,15 @@ const ProductList: React.FC<ProductListProps> = ({ onAddToCart }) => {
   };
 
   const handleAddToCart = (produto: Produto) => {
+    if (produto.estoque <= 0) {
+      showToast(`${produto.nome} está sem estoque`, 'info');
+      return;
+    }
+
     setAddingId(produto.id);
     adicionarAoCarrinho(usuarioId, {
       produtoId: produto.id,
-      quantidade: 1,
-      precoUnitario: produto.preco
+      quantidade: 1
     }).then(() => {
       onAddToCart();
       showToast(`${produto.nome} adicionado ao carrinho!`, 'success');
@@ -107,14 +127,14 @@ const ProductList: React.FC<ProductListProps> = ({ onAddToCart }) => {
                   <div className="product-price">R$ {p.preco.toFixed(2)}</div>
                 </div>
                 <div className="product-stock">
-                  <div className="stock-indicator"></div>
-                  Em estoque
+                  <div className={`stock-indicator ${p.estoque <= 0 ? 'stock-indicator-empty' : ''}`}></div>
+                  {p.estoque > 0 ? `${p.estoque} em estoque` : 'Sem estoque'}
                 </div>
               </div>
               
               <button 
                 onClick={() => handleAddToCart(p)}
-                disabled={addingId === p.id}
+                disabled={addingId === p.id || p.estoque <= 0}
                 className="btn btn-add-cart"
               >
                 {addingId === p.id ? (

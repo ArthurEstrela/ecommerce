@@ -20,7 +20,7 @@ public class Carrinho {
     private Long id;
     private Long usuarioId;
 
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
     @JoinColumn(name = "carrinho_id")
     private List<ItemCarrinho> itens;
 }

@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
@@ -26,22 +25,22 @@ public class FallbackController {
 
     private static final Logger log = LoggerFactory.getLogger(FallbackController.class);
 
-    @GetMapping(value = "/produto", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequestMapping(value = "/produto", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> produtoFallback(ServerWebExchange exchange) {
         return buildFallbackResponse("produto-service", exchange);
     }
 
-    @GetMapping(value = "/carrinho", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequestMapping(value = "/carrinho", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> carrinhoFallback(ServerWebExchange exchange) {
         return buildFallbackResponse("carrinho-service", exchange);
     }
 
-    @GetMapping(value = "/pedido", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequestMapping(value = "/pedido", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> pedidoFallback(ServerWebExchange exchange) {
         return buildFallbackResponse("pedido-service", exchange);
     }
 
-    @GetMapping(value = "/pagamento", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequestMapping(value = "/pagamento", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> pagamentoFallback(ServerWebExchange exchange) {
         return buildFallbackResponse("pagamento-service", exchange);
     }
