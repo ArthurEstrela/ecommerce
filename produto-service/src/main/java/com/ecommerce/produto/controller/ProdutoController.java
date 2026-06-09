@@ -30,6 +30,11 @@ public class ProdutoController {
         return produtoService.salvar(produto);
     }
 
+    @PostMapping("/{id}/baixar-estoque")
+    public Produto baixarEstoque(@PathVariable Long id, @RequestParam Integer quantidade) {
+        return produtoService.baixarEstoque(id, quantidade);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deletar(@PathVariable Long id) {
         produtoService.deletar(id);
