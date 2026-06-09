@@ -26,15 +26,30 @@ const ProductList: React.FC<ProductListProps> = ({ usuarioId, onAddToCart }) => 
   const [addingId, setAddingId] = useState<number | null>(null);
 
   useEffect(() => {
-    getProdutos()
-      .then(res => {
-        setProdutos(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Erro ao buscar produtos", err);
-        setLoading(false);
-      });
+    let active = true;
+
+    const loadProducts = (showLoading = false) => {
+      if (showLoading) setLoading(true);
+
+      getProdutos()
+        .then(res => {
+          if (!active) return;
+          setProdutos(res.data);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error("Erro ao buscar produtos", err);
+          if (active) setLoading(false);
+        });
+    };
+
+    loadProducts(true);
+    const interval = setInterval(() => loadProducts(false), 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error') => {

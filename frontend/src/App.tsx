@@ -5,9 +5,11 @@ import Cart from './components/Cart';
 function App() {
   const [cartCount, setCartCount] = useState(0);
   const [usuarioId, setUsuarioId] = useState(1);
+  const [cartRefreshKey, setCartRefreshKey] = useState(0);
 
   const handleAddToCart = useCallback(() => {
     setCartCount(c => c + 1);
+    setCartRefreshKey(key => key + 1);
   }, []);
 
   const handleCartUpdate = useCallback((count: number) => {
@@ -104,7 +106,7 @@ function App() {
 
         <div className="layout-two-col">
           <ProductList usuarioId={usuarioId} onAddToCart={handleAddToCart} />
-          <Cart usuarioId={usuarioId} onCartUpdate={handleCartUpdate} />
+          <Cart usuarioId={usuarioId} refreshKey={cartRefreshKey} onCartUpdate={handleCartUpdate} />
         </div>
       </main>
 

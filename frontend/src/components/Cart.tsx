@@ -22,6 +22,7 @@ interface Produto {
 
 interface CartProps {
   usuarioId: number;
+  refreshKey: number;
   onCartUpdate: (count: number) => void;
 }
 
@@ -36,7 +37,7 @@ const getPedidoIdFromMessage = (message: string) => {
   return match ? Number(match[1]) : null;
 };
 
-const Cart: React.FC<CartProps> = ({ usuarioId, onCartUpdate }) => {
+const Cart: React.FC<CartProps> = ({ usuarioId, refreshKey, onCartUpdate }) => {
   const [itens, setItens] = useState<Item[]>([]);
   const [produtos, setProdutos] = useState<Record<number, Produto>>({});
   const [loading, setLoading] = useState(true);
@@ -46,8 +47,9 @@ const Cart: React.FC<CartProps> = ({ usuarioId, onCartUpdate }) => {
   const [successMsg, setSuccessMsg] = useState('');
   const [pendingPedidoId, setPendingPedidoId] = useState<number | null>(null);
 
-  const loadCart = useCallback(() => {
-    setLoading(true);
+  const loadCart = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true);
+
     getCarrinho(usuarioId)
       .then(res => {
         const cartItems = sortCartItems(res.data.itens || []);
@@ -62,15 +64,28 @@ const Cart: React.FC<CartProps> = ({ usuarioId, onCartUpdate }) => {
   }, [onCartUpdate, usuarioId]);
 
   useEffect(() => {
-    getProdutos()
-      .then(res => {
-        const productMap = (res.data || []).reduce((acc: Record<number, Produto>, produto: Produto) => {
-          acc[produto.id] = produto;
-          return acc;
-        }, {});
-        setProdutos(productMap);
-      })
-      .catch(err => console.error("Erro ao buscar produtos para o carrinho", err));
+    let active = true;
+
+    const loadProducts = () => {
+      getProdutos()
+        .then(res => {
+          if (!active) return;
+          const productMap = (res.data || []).reduce((acc: Record<number, Produto>, produto: Produto) => {
+            acc[produto.id] = produto;
+            return acc;
+          }, {});
+          setProdutos(productMap);
+        })
+        .catch(err => console.error("Erro ao buscar produtos para o carrinho", err));
+    };
+
+    loadProducts();
+    const interval = setInterval(loadProducts, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -78,18 +93,20 @@ const Cart: React.FC<CartProps> = ({ usuarioId, onCartUpdate }) => {
     setSuccessMsg('');
     setPendingPedidoId(null);
     onCartUpdate(0);
-    loadCart();
+    loadCart(true);
     
     const interval = setInterval(() => {
-      getCarrinho(usuarioId).then(res => {
-        const cartItems = sortCartItems(res.data.itens || []);
-        setItens(cartItems);
-        onCartUpdate(cartItems.reduce((acc: number, item: Item) => acc + item.quantidade, 0));
-      }).catch(() => {});
-    }, 2000);
+      loadCart(false);
+    }, 5000);
     
     return () => clearInterval(interval);
   }, [loadCart, usuarioId, onCartUpdate]);
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      loadCart(false);
+    }
+  }, [refreshKey, loadCart]);
 
   const handleCheckout = () => {
     setCheckoutLoading(true);
