@@ -10,7 +10,6 @@ import com.ecommerce.pedido.grpc.PedidoServiceGrpc;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
 public class CarrinhoService {
 
     private final CarrinhoRepository carrinhoRepository;
-    private final RestTemplate restTemplate;
 
     @GrpcClient("pedido-service")
     private PedidoServiceGrpc.PedidoServiceBlockingStub pedidoStub;
@@ -73,21 +71,7 @@ public class CarrinhoService {
         carrinho.getItens().clear();
         carrinhoRepository.save(carrinho);
 
-        // =====================================================
-        // COMUNICAÇÃO ENTRE SERVIÇOS via REST
-        // Após criar o pedido via gRPC, chama o serviço de
-        // pagamento via REST usando o nome lógico registrado
-        // no Eureka (Service Discovery - Transparência de Localização).
-        // =====================================================
-        try {
-            String pagamentoUrl = "http://pagamento-service/api/pagamento/processar?pedidoId="
-                    + response.getPedidoId() + "&valor=" + valorTotal;
-            restTemplate.postForObject(pagamentoUrl, null, String.class);
-            System.out.println("Carrinho Service: Pagamento solicitado automaticamente para pedido: " + response.getPedidoId());
-        } catch (Exception e) {
-            System.out.println("Carrinho Service: Aviso - Não foi possível chamar pagamento automaticamente: " + e.getMessage());
-        }
-
-        return "Pedido #" + response.getPedidoId() + " criado via gRPC! Status: " + response.getStatus() + ". Pagamento em processamento.";
+        return "Pedido #" + response.getPedidoId() + " criado via gRPC! Status: "
+                + response.getStatus() + ". Aguardando processamento do pagamento.";
     }
 }
