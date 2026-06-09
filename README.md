@@ -27,10 +27,11 @@ Fluxo principal:
 2. O frontend adiciona itens ao carrinho via Carrinho Service (passando pelo API Gateway).
 3. O Carrinho Service cria o pedido chamando o Pedido Service via gRPC.
 4. O Pedido Service persiste o pedido e publica o evento `pedido.criado` em uma fila dedicada.
-5. O Carrinho Service solicita o pagamento automaticamente via REST usando o nome lógico `pagamento-service`.
+5. O pedido permanece com status `PROCESSANDO` até o pagamento ser processado.
 6. O Pagamento Service publica o evento `pagamento.aprovado` em uma Fanout Exchange.
 7. Pedido, Estoque e Notificação consomem o evento de pagamento de forma independente.
-8. Todas as requisições do frontend passam pelo API Gateway, que faz o roteamento inteligente (`lb://`), controle de CORS, rate limiting e circuit breaker.
+8. O Pedido Service atualiza o pedido para `PAGO` e o Estoque Service baixa o estoque dos produtos vendidos.
+9. Todas as requisições do frontend passam pelo API Gateway, que faz o roteamento inteligente (`lb://`), controle de CORS, rate limiting e circuit breaker.
 
 ## Arquitetura
 
@@ -173,7 +174,8 @@ docker compose down -v
 | --- | --- | --- |
 | Frontend | http://localhost:3000 | - |
 | API Gateway | http://localhost:8080 | - |
-| Gateway Actuator | http://localhost:8080/actuator/health | - |
+| Gateway Actuator Health | http://localhost:8080/actuator/health | - |
+| Gateway Actuator Routes | http://localhost:8080/actuator/gateway/routes | - |
 | Eureka Dashboard | http://localhost:8761 | - |
 | RabbitMQ Management | http://localhost:15672 | `guest` / `guest` |
 | pgAdmin | http://localhost:5050 | `admin@admin.com` / `admin` |
@@ -195,6 +197,7 @@ Base URL: `http://localhost:8080`
 | `GET` | `/api/produtos` | Lista produtos |
 | `GET` | `/api/produtos/{id}` | Busca produto por ID |
 | `POST` | `/api/produtos` | Cria produto |
+| `POST` | `/api/produtos/{id}/baixar-estoque?quantidade={quantidade}` | Baixa estoque de um produto |
 | `DELETE` | `/api/produtos/{id}` | Remove produto |
 
 Exemplo:
@@ -220,8 +223,10 @@ Base URL: `http://localhost:8080`
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
 | `GET` | `/api/carrinho/{usuarioId}` | Busca ou cria o carrinho do usuário |
-| `POST` | `/api/carrinho/{usuarioId}/adicionar` | Adiciona item ao carrinho |
-| `POST` | `/api/carrinho/{usuarioId}/checkout` | Cria pedido via gRPC e solicita pagamento via REST |
+| `POST` | `/api/carrinho/{usuarioId}/adicionar` | Adiciona item ao carrinho buscando preço e estoque no Produto Service |
+| `PUT` | `/api/carrinho/{usuarioId}/itens/{itemId}?quantidade={quantidade}` | Altera a quantidade de um item do carrinho |
+| `DELETE` | `/api/carrinho/{usuarioId}/itens/{itemId}` | Remove um item do carrinho |
+| `POST` | `/api/carrinho/{usuarioId}/checkout` | Cria pedido via gRPC com status `PROCESSANDO` |
 
 Exemplo:
 
@@ -233,9 +238,22 @@ Content-Type: application/json
 ```json
 {
   "produtoId": 1,
-  "quantidade": 1,
-  "precoUnitario": 7299.0
+  "quantidade": 1
 }
+```
+
+> O cliente não envia `precoUnitario`. O Carrinho Service consulta o Produto Service e usa o preço atual do produto.
+
+Exemplo de alteração de quantidade:
+
+```http
+PUT http://localhost:8080/api/carrinho/1/itens/10?quantidade=2
+```
+
+Exemplo de remoção de item:
+
+```http
+DELETE http://localhost:8080/api/carrinho/1/itens/10
 ```
 
 ### Pedido Service
@@ -256,12 +274,12 @@ Base URL: `http://localhost:8080`
 
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
-| `POST` | `/api/pagamento/processar?pedidoId={pedidoId}&valor={valor}` | Processa pagamento simulado e publica evento no RabbitMQ |
+| `POST` | `/api/pagamento/processar?pedidoId={pedidoId}` | Processa pagamento simulado usando o valor total do pedido e publica evento no RabbitMQ |
 
 Exemplo:
 
 ```http
-POST http://localhost:8080/api/pagamento/processar?pedidoId=1&valor=7299.0
+POST http://localhost:8080/api/pagamento/processar?pedidoId=1
 ```
 
 ### Serviços sem endpoint REST público
@@ -277,8 +295,10 @@ POST http://localhost:8080/api/pagamento/processar?pedidoId=1&valor=7299.0
 
 1. Acesse http://localhost:3000.
 2. Adicione um produto ao carrinho.
-3. Finalize a compra.
-4. Consulte os logs dos serviços para acompanhar gRPC, REST e RabbitMQ.
+3. Ajuste quantidades ou remova itens, se necessário.
+4. Finalize a compra para criar o pedido com status `PROCESSANDO`.
+5. Clique em `Processar pagamento do pedido #...` para aprovar o pagamento.
+6. Consulte os logs dos serviços para acompanhar gRPC, REST e RabbitMQ.
 
 ```bash
 docker compose logs -f api-gateway carrinho-service pedido-service pagamento-service estoque-service notificacao-service
@@ -292,12 +312,12 @@ docker compose logs -f api-gateway carrinho-service pedido-service pagamento-ser
 curl http://localhost:8080/api/produtos
 ```
 
-2. Adicione um produto ao carrinho:
+2. Adicione um produto ao carrinho. Envie apenas `produtoId` e `quantidade`; o backend busca o preço do produto:
 
 ```bash
 curl -X POST http://localhost:8080/api/carrinho/1/adicionar \
   -H "Content-Type: application/json" \
-  -d '{"produtoId":1,"quantidade":1,"precoUnitario":7299.0}'
+  -d '{"produtoId":1,"quantidade":1}'
 ```
 
 3. Consulte o carrinho:
@@ -306,19 +326,39 @@ curl -X POST http://localhost:8080/api/carrinho/1/adicionar \
 curl http://localhost:8080/api/carrinho/1
 ```
 
-4. Faça checkout:
+4. Opcionalmente altere a quantidade ou remova um item. Use o `id` do item retornado na consulta do carrinho:
+
+```bash
+curl -X PUT "http://localhost:8080/api/carrinho/1/itens/10?quantidade=2"
+curl -X DELETE http://localhost:8080/api/carrinho/1/itens/10
+```
+
+5. Faça checkout. O pedido deve ser criado com status `PROCESSANDO`:
 
 ```bash
 curl -X POST http://localhost:8080/api/carrinho/1/checkout
 ```
 
-5. Consulte os pedidos:
+6. Consulte os pedidos e copie o `id` do pedido criado:
 
 ```bash
 curl http://localhost:8080/api/pedidos
 ```
 
-6. Verifique as filas e exchanges no RabbitMQ Management:
+7. Processe o pagamento manualmente. O Pagamento Service busca o valor total do pedido; não é necessário enviar valor:
+
+```bash
+curl -X POST "http://localhost:8080/api/pagamento/processar?pedidoId=1"
+```
+
+8. Consulte novamente os pedidos e os produtos. O pedido deve estar `PAGO` e o estoque deve ter sido reduzido:
+
+```bash
+curl http://localhost:8080/api/pedidos
+curl http://localhost:8080/api/produtos
+```
+
+9. Verifique as filas e exchanges no RabbitMQ Management:
 
 ```text
 http://localhost:15672
@@ -347,7 +387,7 @@ O Carrinho Service usa gRPC para criar pedidos no Pedido Service:
 - Servidor: `pedido-service/src/main/java/com/ecommerce/pedido/service/PedidoGrpcService.java`
 - Endereço via discovery: `discovery:///pedido-service`
 
-Essa comunicação é síncrona porque o Carrinho Service aguarda a resposta do Pedido Service antes de esvaziar o carrinho e solicitar o pagamento. O contrato gRPC é definido em Protocol Buffers, funcionando como IDL (Interface Definition Language) entre os serviços.
+Essa comunicação é síncrona porque o Carrinho Service aguarda a resposta do Pedido Service antes de esvaziar o carrinho. O pagamento é uma etapa separada, acionada depois pelo Pagamento Service. O contrato gRPC é definido em Protocol Buffers, funcionando como IDL (Interface Definition Language) entre os serviços.
 
 ### Mensageria e eventos com RabbitMQ
 
@@ -393,7 +433,7 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 | --- | --- |
 | Servidor de nomes | `eureka-server` na porta `8761` |
 | Clientes registrados | Produto, Carrinho, Pedido, Pagamento, Estoque e Notificação |
-| REST com discovery | Carrinho chama `http://pagamento-service/...` |
+| REST com discovery | Carrinho consulta `http://produto-service/...`, Pagamento consulta `http://pedido-service/...` e Estoque chama `http://produto-service/...` |
 | gRPC com discovery | Carrinho usa `discovery:///pedido-service` |
 | Configuração | `application.yml` de cada serviço e variáveis no `docker-compose.yml` |
 
@@ -405,10 +445,10 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 | --- | --- |
 | API Gateway | Ponto único de entrada para todas as requisições externas. Centraliza roteamento, CORS, resiliência e observabilidade. |
 | Produto Service | Gerencia o catálogo de produtos e persiste dados em `produto_db`. |
-| Carrinho Service | Gerencia o carrinho do usuário, calcula total e orquestra o checkout. |
+| Carrinho Service | Gerencia o carrinho do usuário, consulta preço/estoque no Produto Service, permite alterar/remover itens e cria pedidos via gRPC. |
 | Pedido Service | Recebe chamadas gRPC, cria pedidos, publica evento de pedido criado e atualiza status após pagamento. |
-| Pagamento Service | Simula processamento financeiro e publica evento de pagamento aprovado. |
-| Estoque Service | Consome evento de pagamento aprovado para representar baixa ou reserva de estoque. |
+| Pagamento Service | Simula processamento financeiro, busca o valor total do pedido e publica evento de pagamento aprovado. |
+| Estoque Service | Consome evento de pagamento aprovado e baixa o estoque dos produtos vendidos. |
 | Notificação Service | Consome eventos de pedido criado e pagamento aprovado para simular notificações. |
 | Eureka Server | Centraliza registro e descoberta de microsserviços. |
 | Frontend | Interface web para listar produtos, adicionar ao carrinho e finalizar compra. |
@@ -434,8 +474,8 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 | Transparência | Como aparece no projeto |
 | --- | --- |
 | Acesso | A chamada `pedidoStub.criarPedido(request)` parece uma chamada local, mas executa lógica remota no Pedido Service. |
-| Localização | O Carrinho Service usa `http://pagamento-service/...` e `discovery:///pedido-service`, sem depender de IP fixo. |
-| Falha | A chamada REST para pagamento possui `try-catch`; se falhar, o pedido continua criado e o erro é registrado no log. |
+| Localização | Serviços usam nomes lógicos como `http://produto-service/...`, `http://pedido-service/...` e `discovery:///pedido-service`, sem depender de IP fixo. |
+| Falha | O API Gateway possui Circuit Breaker e fallback para os serviços REST; filas duráveis ajudam a preservar eventos se consumidores ficarem indisponíveis temporariamente. |
 | Concorrência | Pedido, Estoque e Notificação consomem o mesmo evento de pagamento em filas separadas, sem bloquear uns aos outros. |
 | Migração | Com Docker Compose e Eureka, serviços podem mudar de endereço dentro da rede sem alteração no código consumidor. |
 | Replicação | Não foi implementada explicitamente, mas Eureka e `@LoadBalanced RestTemplate` permitem evoluir para múltiplas instâncias. |
@@ -453,7 +493,7 @@ O Eureka Server atua como serviço de nomes e registro de serviços. Cada micros
 ### Decisões arquiteturais
 
 - Usar gRPC entre Carrinho e Pedido porque a criação de pedido é uma operação síncrona central do checkout.
-- Usar REST entre Carrinho e Pagamento para demonstrar outro padrão de comunicação entre serviços com Service Discovery.
+- Usar REST entre serviços para consultas auxiliares via Service Discovery, como Carrinho -> Produto, Pagamento -> Pedido e Estoque -> Produto.
 - Usar Direct Exchange para `pedido.criado`, pois a notificação de pedido criado tem um consumidor principal.
 - Usar Fanout Exchange para `pagamento.aprovado`, pois o mesmo evento interessa a Pedido, Estoque e Notificação.
 - Separar os bancos `produto_db`, `carrinho_db`, `pedido_db` e `estoque_db` para respeitar o isolamento de dados em microsserviços.
