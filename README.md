@@ -546,29 +546,45 @@ Esta seção apresenta os prints capturados do sistema em execução e das comun
 
 ### Demonstração das comunicações
 
+#### API Gateway - health
+
+![GET Gateway Health](imagens/img_get_getway_health.png)
+
+#### API Gateway - rotas
+
+![GET Gateway Routes](imagens/img_get_getway_routes.png)
+
 #### Produto Service - criação de produto
 
-![POST criar produto](imagens/img_post_criar_produto.png)
+![POST criar produto](imagens/img_post_add_produto.png)
 
 #### Produto Service - listagem de produtos
 
-![GET listar produtos](imagens/img_get_listar_produtos.png)
+![GET listar produtos](imagens/img_get_busca_produtos.png)
 
 #### Carrinho Service - adicionar item
 
-![POST adicionar item ao carrinho](imagens/img_post_add_item_carrinho.png)
+![POST adicionar item ao carrinho](imagens/img_post_add_produto_carrinho.png)
 
 #### Carrinho Service - consultar carrinho
 
-![GET consultar carrinho](imagens/img_get_ver_carrinho.png)
+![GET consultar carrinho](imagens/img_get_lista_produtos_carrinho_id.png)
 
 #### Carrinho Service - checkout
 
-![POST checkout carrinho](imagens/img_post_checkout_carrinho.png)
+![POST checkout carrinho](imagens/img_post_faz_ckeckout_carrinho_id.png)
+
+#### Pedido Service - status PROCESSANDO após checkout
+
+![GET pedido processando](imagens/img_get_lista_pedido_id_status_processando_apos_checkout_carrinho.png)
 
 #### Pagamento Service - processamento de pagamento
 
-![POST processar pagamento](imagens/img_post_processar_pagamento.png)
+![POST processar pagamento](imagens/img_post_processa_pagamento_pedido_id.png)
+
+#### Pedido Service - status PAGO após pagamento
+
+![GET pedido pago](imagens/img_get_lista_pedido_id_status_pago_apos_processar_pagamento.png)
 
 #### Logs da comunicação gRPC entre Carrinho e Pedido
 
