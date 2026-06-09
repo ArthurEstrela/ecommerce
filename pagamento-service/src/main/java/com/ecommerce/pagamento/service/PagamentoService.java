@@ -17,15 +17,18 @@ public class PagamentoService {
     private final RabbitTemplate rabbitTemplate;
     private final RestTemplate restTemplate;
 
-    public void processarPagamento(Long pedidoId, Double valor) {
+    public void processarPagamento(Long pedidoId) {
         Map<String, Object> pedido = restTemplate.getForObject(
                 "http://pedido-service/api/pedidos/" + pedidoId,
                 Map.class
         );
 
-        List<Map<String, Object>> itens = pedido != null
-                ? (List<Map<String, Object>>) pedido.get("itens")
-                : List.of();
+        if (pedido == null) {
+            throw new RuntimeException("Pedido não encontrado");
+        }
+
+        Double valor = Double.valueOf(pedido.get("valorTotal").toString());
+        List<Map<String, Object>> itens = (List<Map<String, Object>>) pedido.get("itens");
 
         // Simulação de processamento
         PagamentoEvent event = PagamentoEvent.builder()
