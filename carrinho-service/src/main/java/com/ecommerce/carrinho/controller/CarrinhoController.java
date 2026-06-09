@@ -23,6 +23,20 @@ public class CarrinhoController {
         return carrinhoService.adicionarItem(usuarioId, item);
     }
 
+    @PutMapping("/{usuarioId}/itens/{itemId}")
+    public Carrinho alterarQuantidade(
+            @PathVariable Long usuarioId,
+            @PathVariable Long itemId,
+            @RequestParam Integer quantidade
+    ) {
+        return carrinhoService.alterarQuantidade(usuarioId, itemId, quantidade);
+    }
+
+    @DeleteMapping("/{usuarioId}/itens/{itemId}")
+    public Carrinho removerItem(@PathVariable Long usuarioId, @PathVariable Long itemId) {
+        return carrinhoService.removerItem(usuarioId, itemId);
+    }
+
     @PostMapping("/{usuarioId}/checkout")
     public String checkout(@PathVariable Long usuarioId) {
         return carrinhoService.checkout(usuarioId);
