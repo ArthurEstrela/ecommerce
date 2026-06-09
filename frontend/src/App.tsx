@@ -1,9 +1,24 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import ProductList from './components/ProductList';
 import Cart from './components/Cart';
 
 function App() {
   const [cartCount, setCartCount] = useState(0);
+  const [usuarioId, setUsuarioId] = useState(1);
+
+  const handleAddToCart = useCallback(() => {
+    setCartCount(c => c + 1);
+  }, []);
+
+  const handleCartUpdate = useCallback((count: number) => {
+    setCartCount(count);
+  }, []);
+
+  const handleUsuarioChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextUsuarioId = Math.max(1, Number(event.target.value) || 1);
+    setUsuarioId(nextUsuarioId);
+    setCartCount(0);
+  };
 
   return (
     <div className="app-container">
@@ -20,6 +35,17 @@ function App() {
           </div>
           
           <div className="navbar-actions">
+            <label className="user-switcher">
+              <span>Usuário</span>
+              <input
+                type="number"
+                min="1"
+                value={usuarioId}
+                onChange={handleUsuarioChange}
+                aria-label="ID do usuário"
+              />
+            </label>
+
             <div className="navbar-status">
               <div className="status-dot"></div>
               <span>Sistema Online</span>
@@ -77,8 +103,8 @@ function App() {
         </div>
 
         <div className="layout-two-col">
-          <ProductList onAddToCart={() => setCartCount(c => c + 1)} />
-          <Cart onCartUpdate={(count) => setCartCount(count)} />
+          <ProductList usuarioId={usuarioId} onAddToCart={handleAddToCart} />
+          <Cart usuarioId={usuarioId} onCartUpdate={handleCartUpdate} />
         </div>
       </main>
 
