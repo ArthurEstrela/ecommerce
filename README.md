@@ -425,6 +425,13 @@ Quando um pagamento é aprovado, o Pagamento Service publica um evento para todo
 
 Nesse caso, cada serviço tem sua própria fila ligada à mesma exchange. Assim, o mesmo evento de pagamento é entregue de forma independente para Pedido, Estoque e Notificação.
 
+**Destaques Arquiteturais do Padrão de Eventos (Event-Driven Design):**
+
+* **Broadcast (O efeito "Megafone"):** O `FanoutExchange` atua como um roteador de *broadcast*. Ele ignora chaves de roteamento (*routing keys*) e clona instantaneamente o objeto `PagamentoEvent` para as três filas conectadas.
+* **Processamento Paralelo (Transparência de Concorrência):** Uma única publicação do `Pagamento Service` desencadeia três fluxos de trabalho simultâneos e independentes (baixa de inventário, mudança de status no banco de dados e disparo de alerta ao usuário). Isso reduz drasticamente o tempo total de resposta do sistema.
+* **Acoplamento Fraco (Loose Coupling):** O produtor do evento (`Pagamento Service`) não possui nenhuma dependência direta (nem IP, nem porta, nem interface) com os serviços que consomem a mensagem. Se um futuro "Serviço de Faturamento" for criado, basta plugar uma nova fila na *exchange* sem precisar alterar nenhuma linha de código no Pagamento.
+* **Resiliência:** As filas dos assinantes foram instanciadas como duráveis (`durable = true`). Se o `Notificação Service` ficar offline temporariamente, as mensagens não são perdidas; elas permanecem seguras no broker (RabbitMQ) e são processadas assim que o serviço for restabelecido.
+
 ### Serviço de nomes com Eureka
 
 O Eureka Server atua como serviço de nomes e registro de serviços. Cada microsserviço registra seu nome lógico no Eureka, permitindo que outros serviços o encontrem sem conhecer IP ou porta fixa.
