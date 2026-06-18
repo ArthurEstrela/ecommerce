@@ -14,22 +14,22 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PedidoController {
 
-    private final PedidoRepository pedidoRepository;
+    private final PedidoService pedidoService;
 
     @GetMapping
     public List<Pedido> listarTodos() {
-        return pedidoRepository.findAll();
+        return pedidoService.listarTodos();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Pedido> buscarPorId(@PathVariable Long id) {
-        return pedidoRepository.findById(id)
+        return pedidoService.buscarPorId(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/usuario/{usuarioId}")
     public List<Pedido> buscarPorUsuario(@PathVariable Long usuarioId) {
-        return pedidoRepository.findByUsuarioId(usuarioId);
+        return pedidoService.buscarPorUsuario(usuarioId);
     }
 }
